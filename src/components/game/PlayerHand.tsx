@@ -107,7 +107,7 @@ export function PlayerHand({
               </Button>
             )}
             {turnPhase === 'play' && !isDiscardMode && (
-              <Button onClick={onEndTurn} size="sm" variant="outline" className="border-yellow-400 text-yellow-400 hover:bg-yellow-400/10">
+              <Button onClick={onEndTurn} variant="outline" className="border-yellow-400 text-yellow-400 hover:bg-yellow-400/10 h-10 px-5 text-sm sm:h-7 sm:px-2 sm:text-xs">
                 End Turn
               </Button>
             )}

@@ -4,14 +4,15 @@ import { RoomLobby } from '@/components/game/RoomLobby';
 import { GameTable } from '@/components/game/GameTable';
 import { PlayerHand } from '@/components/game/PlayerHand';
 import { PaymentModal } from '@/components/game/PaymentModal';
+import { ActionResponseModal } from '@/components/game/ActionResponseModal';
 import { Button } from '@/components/ui/button';
-import { Trophy, ArrowLeft, AlertCircle } from 'lucide-react';
+import { Trophy, ArrowLeft, AlertCircle, Ban, Eye } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useEffect, useRef } from 'react';
 
 function App() {
   const [state, actions] = useSocket();
-  const { room, currentPlayer, error, mustDiscard, pendingPayment } = state;
+  const { room, currentPlayer, error, mustDiscard, pendingPayment, pendingAction, pendingJsnCounter, isSpectator } = state;
   const [showError, setShowError] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -40,12 +41,31 @@ function App() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [room?.turnStartedAt, room?.turnTimeLimit, room?.phase]);
 
+  // Active game state
+  const activePlayer  = room?.players[room.currentPlayerIndex];
+  const isMyTurn      = activePlayer?.id === currentPlayer?.id;
+  const myPlayerData  = room?.players.find(p => p.id === currentPlayer?.id);
+
+  // Auto-end turn when 3 cards have been played and nothing is pending
+  useEffect(() => {
+    if (!isMyTurn || !myPlayerData || room?.turnPhase !== 'play') return;
+    if (
+      myPlayerData.cardsPlayedThisTurn >= 3 &&
+      (room?.pendingPayments.length ?? 0) === 0 &&
+      (room?.pendingActions.length ?? 0) === 0 &&
+      !mustDiscard
+    ) {
+      actions.endTurn();
+    }
+  }, [myPlayerData?.cardsPlayedThisTurn, room?.pendingPayments.length, room?.pendingActions.length, isMyTurn, mustDiscard]);
+
   if (!room) {
     return (
       <>
         <MainMenu
           onCreateRoom={actions.createRoom}
           onJoinRoom={actions.joinRoom}
+          onWatchRoom={actions.watchRoom}
           connected={state.connected}
         />
         {showError && error && (
@@ -104,14 +124,14 @@ function App() {
     );
   }
 
-  // Active game
-  const activePlayer  = room.players[room.currentPlayerIndex];
-  const isMyTurn      = activePlayer?.id === currentPlayer?.id;
-  const myPlayerData  = room.players.find(p => p.id === currentPlayer?.id);
-
   // Resolve creditor name for payment modal
   const creditorName = pendingPayment
     ? (room.players.find(p => p.id === pendingPayment.creditorId)?.name ?? 'Opponent')
+    : '';
+
+  // Resolve actor name for action response modal
+  const actionActorName = pendingAction
+    ? (room.players.find(p => p.id === pendingAction.actorId)?.name ?? 'Opponent')
     : '';
 
   return (
@@ -123,15 +143,26 @@ function App() {
             <span className="text-gray-400 text-xs">ROOM</span> {room.id}
           </div>
           <div className="text-gray-600">|</div>
-          <div className="text-gray-300 text-sm">
-            <span className="text-gray-500 text-xs">TURN </span>
-            <span className={isMyTurn ? 'text-yellow-400 font-bold' : 'text-white'}>
-              {isMyTurn ? 'You' : activePlayer?.name}
+          {isSpectator ? (
+            <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+              <Eye className="w-3 h-3" /> Watching
             </span>
-          </div>
+          ) : (
+            <div className="text-gray-300 text-sm">
+              <span className="text-gray-500 text-xs">TURN </span>
+              <span className={isMyTurn ? 'text-yellow-400 font-bold' : 'text-white'}>
+                {isMyTurn ? 'You' : activePlayer?.name}
+              </span>
+            </div>
+          )}
           {room.pendingPayments.length > 0 && (
             <span className="text-xs bg-orange-500 text-white px-2 py-0.5 rounded-full animate-pulse">
               Awaiting payment…
+            </span>
+          )}
+          {room.pendingActions.length > 0 && (
+            <span className="text-xs bg-purple-600 text-white px-2 py-0.5 rounded-full animate-pulse">
+              Awaiting response…
             </span>
           )}
           {isMyTurn && secondsLeft !== null && (
@@ -158,13 +189,13 @@ function App() {
           players={room.players}
           currentPlayerId={currentPlayer?.id || ''}
           version={room.version}
-          isMyTurn={isMyTurn}
+          isMyTurn={isMyTurn && !isSpectator}
           onMoveWildcard={actions.moveWildcard}
         />
       </div>
 
-      {/* Player hand */}
-      {myPlayerData && (
+      {/* Player hand — hidden for spectators */}
+      {myPlayerData && !isSpectator && (
         <PlayerHand
           cards={myPlayerData.hand}
           onPlayCard={actions.playCard}
@@ -181,6 +212,15 @@ function App() {
         />
       )}
 
+      {/* Spectator footer banner */}
+      {isSpectator && (
+        <div className="bg-blue-900/80 border-t border-blue-700 px-4 py-2 text-center flex-shrink-0">
+          <span className="text-blue-200 text-sm flex items-center justify-center gap-2">
+            <Eye className="w-4 h-4" /> You are watching this game
+          </span>
+        </div>
+      )}
+
       {/* Payment modal — shown when this player owes money */}
       {pendingPayment && myPlayerData && (
         <PaymentModal
@@ -191,6 +231,56 @@ function App() {
           onJustSayNo={(cardId) => actions.justSayNo(pendingPayment.id, cardId)}
         />
       )}
+
+      {/* Deal Breaker JSN response modal */}
+      {pendingAction && myPlayerData && (
+        <ActionResponseModal
+          action={pendingAction}
+          myPlayer={myPlayerData}
+          actorName={actionActorName}
+          onAccept={() => actions.respondToAction(pendingAction.id, 'accept')}
+          onJustSayNo={(cardId) => actions.respondToAction(pendingAction.id, 'jsn', cardId)}
+        />
+      )}
+
+      {/* JSN counter-opportunity banner (creditor countering debtor's JSN on a payment) */}
+      {pendingJsnCounter && myPlayerData && (() => {
+        const jsnCard = myPlayerData.hand.find(c => c.actionType === 'sayno');
+        return (
+          <div className="fixed inset-0 bg-black/75 z-[70] flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden">
+              <div className="bg-purple-700 text-white px-4 py-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Ban className="w-5 h-5" />
+                  <p className="font-bold text-sm">Just Say No played against you!</p>
+                </div>
+                <p className="text-purple-200 text-xs">
+                  {pendingJsnCounter.debtorName} cancelled your demand with Just Say No!
+                  {jsnCard ? ' Counter with your own Just Say No?' : ''}
+                </p>
+              </div>
+              <div className="p-4 space-y-2">
+                {jsnCard && (
+                  <Button
+                    onClick={() => actions.counterJsn(pendingJsnCounter.paymentId, 'jsn', jsnCard.id)}
+                    className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold h-12"
+                  >
+                    <Ban className="w-4 h-4 mr-2" />
+                    Counter with Just Say No!
+                  </Button>
+                )}
+                <Button
+                  onClick={() => actions.counterJsn(pendingJsnCounter.paymentId, 'accept')}
+                  variant="outline"
+                  className="w-full h-10 text-sm text-gray-600"
+                >
+                  Accept — let Just Say No stand
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Error toast */}
       {showError && error && (

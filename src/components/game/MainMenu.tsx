@@ -6,11 +6,12 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Slider } from '@/components/ui/slider';
 import type { GameVersion } from '@/types/game';
 import { cn } from '@/lib/utils';
-import { Plus, LogIn, Users, Globe, Gamepad2, Bot, User } from 'lucide-react';
+import { Plus, LogIn, Users, Globe, Gamepad2, Bot, User, Eye } from 'lucide-react';
 
 interface MainMenuProps {
   onCreateRoom: (playerName: string, version: GameVersion, mode: 'single' | 'multi', aiCount?: number, turnTimeLimit?: number) => void;
   onJoinRoom: (playerName: string, roomCode: string) => void;
+  onWatchRoom: (playerName: string, roomCode: string) => void;
   connected?: boolean;
 }
 
@@ -22,8 +23,8 @@ const TIMER_OPTIONS = [
   { value: 0,   label: '∞ No limit' },
 ];
 
-export function MainMenu({ onCreateRoom, onJoinRoom, connected = true }: MainMenuProps) {
-  const [mode, setMode] = useState<'menu' | 'create-single' | 'create-multi' | 'join'>('menu');
+export function MainMenu({ onCreateRoom, onJoinRoom, onWatchRoom, connected = true }: MainMenuProps) {
+  const [mode, setMode] = useState<'menu' | 'create-single' | 'create-multi' | 'join' | 'watch'>('menu');
   const [playerName, setPlayerName] = useState('');
   const [roomCode, setRoomCode] = useState('');
   const [version, setVersion] = useState<GameVersion>('us');
@@ -49,6 +50,18 @@ export function MainMenu({ onCreateRoom, onJoinRoom, connected = true }: MainMen
       return;
     }
     onJoinRoom(playerName.trim(), roomCode.trim().toUpperCase());
+  };
+
+  const handleWatchRoom = () => {
+    if (!playerName.trim()) {
+      setError('Please enter your name');
+      return;
+    }
+    if (!roomCode.trim()) {
+      setError('Please enter room code');
+      return;
+    }
+    onWatchRoom(playerName.trim(), roomCode.trim().toUpperCase());
   };
 
   if (mode === 'menu') {
@@ -114,13 +127,22 @@ export function MainMenu({ onCreateRoom, onJoinRoom, connected = true }: MainMen
               </div>
             </Button>
             
-            <Button 
+            <Button
               onClick={() => setMode('join')}
               variant="outline"
               className="w-full h-14 text-lg border-2 border-purple-500 text-purple-600 hover:bg-purple-50 flex items-center justify-center gap-3"
             >
               <LogIn className="w-5 h-5" />
               Join Room
+            </Button>
+
+            <Button
+              onClick={() => setMode('watch')}
+              variant="outline"
+              className="w-full h-12 text-base border-2 border-blue-400 text-blue-600 hover:bg-blue-50 flex items-center justify-center gap-3"
+            >
+              <Eye className="w-5 h-5" />
+              Watch Game
             </Button>
           </div>
 
@@ -440,12 +462,82 @@ export function MainMenu({ onCreateRoom, onJoinRoom, connected = true }: MainMen
               />
             </div>
 
-            <Button 
+            <Button
               onClick={handleJoinRoom}
               className="w-full h-14 text-lg bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white shadow-lg"
             >
               <LogIn className="w-5 h-5 mr-2" />
               Join Room
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'watch') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-5 sm:p-8">
+          <button
+            onClick={() => { setMode('menu'); setError(''); }}
+            className="text-gray-500 hover:text-gray-700 mb-4 flex items-center gap-1 transition-colors"
+          >
+            ← Back
+          </button>
+
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+              <Eye className="w-6 h-6 text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-800">Watch Game</h2>
+              <p className="text-gray-500 text-sm">Join as a spectator</p>
+            </div>
+          </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-4">
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-6">
+            <div>
+              <Label htmlFor="watch-name" className="text-gray-700 font-medium">
+                <User className="w-4 h-4 inline mr-1" />
+                Your Name
+              </Label>
+              <Input
+                id="watch-name"
+                value={playerName}
+                onChange={(e) => setPlayerName(e.target.value)}
+                placeholder="Enter your name"
+                className="mt-2 h-12"
+                maxLength={20}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="watch-code" className="text-gray-700 font-medium">
+                Room Code
+              </Label>
+              <Input
+                id="watch-code"
+                value={roomCode}
+                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                placeholder="Enter room code"
+                className="mt-2 h-12 text-center text-2xl tracking-widest font-mono uppercase"
+                maxLength={8}
+              />
+            </div>
+
+            <Button
+              onClick={handleWatchRoom}
+              className="w-full h-14 text-lg bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700 text-white shadow-lg"
+            >
+              <Eye className="w-5 h-5 mr-2" />
+              Watch Game
             </Button>
           </div>
         </div>

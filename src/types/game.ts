@@ -46,12 +46,32 @@ export interface PendingPayment {
   debtorId: string;
   amount: number;
   reason: string; // 'rent' | 'debtcollector' | 'birthday'
+  jsnState?: { awaitingCounterFromId: string; jsnCount: number };
+}
+
+export interface PendingAction {
+  id: string;
+  type: 'dealbreaker';
+  actorId: string;      // who played Deal Breaker
+  targetId: string;     // whose set is being stolen
+  targetData: any;      // { targetPlayerId, color }
+  cardId: string;       // Deal Breaker card id (already in discard)
+  responderId: string;  // who needs to respond next (alternates actor ↔ target)
+  jsnCount: number;     // even = action executes; odd = action cancelled
+}
+
+export interface Spectator {
+  id: string;
+  name: string;
+  socketId: string;
 }
 
 export interface Player {
   id: string;
   name: string;
   socketId: string;
+  persistentPlayerId: string;
+  disconnected?: boolean;
   hand: Card[];
   bank: Card[];
   properties: PropertySet[];
@@ -66,6 +86,7 @@ export interface GameRoom {
   id: string;
   hostId: string;
   players: Player[];
+  spectators: Spectator[];
   version: GameVersion;
   phase: GamePhase;
   deck: Card[];
@@ -76,6 +97,7 @@ export interface GameRoom {
   createdAt: number;
   mode?: 'single' | 'multi';
   pendingPayments: PendingPayment[];
+  pendingActions: PendingAction[];
   doubleRentActive: boolean; // Double the Rent card played this turn
   turnTimeLimit: number;     // seconds per turn; 0 = no limit
   turnStartedAt: number;     // ms timestamp when the current turn began
