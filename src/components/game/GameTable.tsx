@@ -22,6 +22,7 @@ function validTargetColors(card: Card, fromColor: PropertyColor): PropertyColor[
 interface GameTableProps {
   players: Player[];
   currentPlayerId: string;
+  activePlayerId: string;
   version: GameVersion;
   isMyTurn: boolean;
   onMoveWildcard: (cardId: string, fromColor: PropertyColor, toColor: PropertyColor) => void;
@@ -36,7 +37,7 @@ const CAR_COLORS = [
   'from-purple-500 to-purple-600',
 ];
 
-export function GameTable({ players, currentPlayerId, version, isMyTurn, onMoveWildcard }: GameTableProps) {
+export function GameTable({ players, currentPlayerId, activePlayerId, version, isMyTurn, onMoveWildcard }: GameTableProps) {
   const opponents = players.filter(p => p.id !== currentPlayerId);
   const mePlayer = players.find(p => p.id === currentPlayerId);
   const getPlayerIndex = (id: string) => players.findIndex(p => p.id === id);
@@ -67,6 +68,7 @@ export function GameTable({ players, currentPlayerId, version, isMyTurn, onMoveW
                 key={player.id}
                 player={player}
                 index={getPlayerIndex(player.id)}
+                isActive={player.id === activePlayerId}
                 onClick={() => setSelectedOpponent(player)}
               />
             ))
@@ -123,7 +125,9 @@ export function GameTable({ players, currentPlayerId, version, isMyTurn, onMoveW
       {/* Current player's area */}
       {mePlayer && (
         <div className="flex-1 min-h-0 overflow-y-auto p-2">
-          <p className="text-[10px] text-white/40 uppercase tracking-wider mb-1.5">Your Area</p>
+          <p className={cn('text-[10px] uppercase tracking-wider mb-1.5', isMyTurn ? 'text-yellow-400 font-bold' : 'text-white/40')}>
+            Your Area{isMyTurn ? ' — YOUR TURN' : ''}
+          </p>
           <MyPlayerArea
             player={mePlayer}
             onSetClick={set => setInspectSet(set)}
@@ -137,7 +141,7 @@ export function GameTable({ players, currentPlayerId, version, isMyTurn, onMoveW
 }
 
 /* ─── Opponent compact card ─── */
-function OpponentCard({ player, index, onClick }: { player: Player; index: number; onClick: () => void }) {
+function OpponentCard({ player, index, isActive, onClick }: { player: Player; index: number; isActive: boolean; onClick: () => void }) {
   const totalBankValue = player.bank.reduce((sum, c) => sum + c.value, 0);
   const totalProperties = player.properties.reduce((sum, s) => sum + s.cards.length, 0);
   const completeSets = player.properties.filter(s => s.isComplete).length;
@@ -146,7 +150,12 @@ function OpponentCard({ player, index, onClick }: { player: Player; index: numbe
 
   return (
     <div
-      className="flex-shrink-0 w-36 bg-white/10 rounded-xl p-2 border border-white/10 cursor-pointer hover:bg-white/20 hover:border-white/30 active:scale-95 transition-all"
+      className={cn(
+        'flex-shrink-0 w-36 rounded-xl p-2 border cursor-pointer active:scale-95 transition-all',
+        isActive
+          ? 'bg-yellow-400/10 border-yellow-400 hover:bg-yellow-400/20'
+          : 'bg-white/10 border-white/10 hover:bg-white/20 hover:border-white/30'
+      )}
       onClick={onClick}
     >
       <div className="flex items-center gap-1.5 mb-1.5">
@@ -154,7 +163,10 @@ function OpponentCard({ player, index, onClick }: { player: Player; index: numbe
           {player.isAI ? <Bot className="w-3.5 h-3.5 text-white" /> : carLogo}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-white text-[11px] font-semibold truncate leading-none">{player.name}</p>
+          <div className="flex items-center gap-1">
+            <p className="text-white text-[11px] font-semibold truncate leading-none">{player.name}</p>
+            {isActive && <span className="text-[8px] font-bold text-yellow-400 animate-pulse flex-shrink-0">TURN</span>}
+          </div>
           <div className="flex items-center gap-1 mt-0.5">
             <span className="text-green-400 text-[9px]">${totalBankValue}M</span>
             <span className="text-white/30 text-[9px]">·</span>

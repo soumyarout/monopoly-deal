@@ -3,7 +3,7 @@ import type { Player, Card, PendingPayment, PropertyColor } from '@/types/game';
 import { CardComponent } from '@/components/cards/Card';
 import { getColorDisplayName } from '@/data/cards';
 import { cn } from '@/lib/utils';
-import { Wallet, Home, AlertTriangle, Ban } from 'lucide-react';
+import { Wallet, Home, AlertTriangle, Ban, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface PaymentModalProps {
@@ -36,7 +36,7 @@ export function PaymentModal({ payment, myPlayer, creditorName, onPay, onJustSay
 
   const totalAvailable =
     myPlayer.bank.reduce((s, c) => s + c.value, 0) +
-    myPlayer.properties.flatMap(s => s.cards).reduce((s, c) => s + c.value, 0);
+    myPlayer.properties.filter(s => !s.isComplete).flatMap(s => s.cards).reduce((s, c) => s + c.value, 0);
 
   // Player can pay what they have if insufficient (spec §6)
   const canConfirm = totalSelected >= payment.amount || totalSelected >= totalAvailable;
@@ -135,7 +135,7 @@ export function PaymentModal({ payment, myPlayer, creditorName, onPay, onJustSay
             </div>
           )}
 
-          {/* Property cards — cannot pay from complete sets (spec §6 clarification) */}
+          {/* Property cards — complete sets are protected, only incomplete sets can be used */}
           {myPlayer.properties.some(s => s.cards.length > 0) && (
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -144,7 +144,7 @@ export function PaymentModal({ payment, myPlayer, creditorName, onPay, onJustSay
                 <span className="text-xs text-gray-400 ml-auto">tap to select</span>
               </div>
               <div className="space-y-2">
-                {myPlayer.properties.filter(s => s.cards.length > 0).map(set => (
+                {myPlayer.properties.filter(s => s.cards.length > 0 && !s.isComplete).map(set => (
                   <div key={set.color}>
                     <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1">
                       <span>{getColorDisplayName(set.color)}</span>
@@ -168,6 +168,12 @@ export function PaymentModal({ payment, myPlayer, creditorName, onPay, onJustSay
                         );
                       })}
                     </div>
+                  </div>
+                ))}
+                {myPlayer.properties.filter(s => s.isComplete).map(set => (
+                  <div key={set.color} className="flex items-center gap-2 opacity-50 py-1">
+                    <Lock className="w-3 h-3 text-green-600 flex-shrink-0" />
+                    <span className="text-xs text-gray-500">{getColorDisplayName(set.color)} — complete set (protected)</span>
                   </div>
                 ))}
               </div>

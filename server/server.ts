@@ -150,6 +150,8 @@ function requestPayments(
 ): void {
   for (const debtor of debtors) {
     if (debtor.id === creditor.id) continue;
+    const hasAnything = debtor.bank.length > 0 || debtor.properties.some(s => s.cards.length > 0);
+    if (!hasAnything) continue; // nothing to collect — skip
     if (debtor.isAI) {
       aiPay(room, debtor, creditor, amount);
     } else {
@@ -201,6 +203,7 @@ function processPayment(
   for (const { color, cardId } of propertyCards) {
     const debtorSet = debtor.properties.find(p => p.color === color);
     if (!debtorSet) continue;
+    if (debtorSet.isComplete) continue; // complete sets are protected from debt payment
     const ci = debtorSet.cards.findIndex(c => c.id === cardId);
     if (ci === -1) continue;
     const [card] = debtorSet.cards.splice(ci, 1);
@@ -469,6 +472,13 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
             targetSet.isComplete = checkPropertySetComplete(targetSet);
             const mySet = player.properties.find(p => p.color === targetData?.color);
             if (mySet) { mySet.cards.push(stolen); mySet.isComplete = checkPropertySetComplete(mySet); }
+            // Notify the victim
+            if (targetPlayer.socketId) {
+              io.to(targetPlayer.socketId).emit('card-taken', {
+                takerName: player.name, cardName: stolen.name,
+                color: targetData?.color, dealType: 'slydeal',
+              });
+            }
           }
         }
       }
@@ -488,6 +498,13 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
             const [theirCard] = theirSet.cards.splice(theirCI, 1);
             mySet.cards.push(theirCard); mySet.isComplete = checkPropertySetComplete(mySet);
             theirSet.cards.push(myCard); theirSet.isComplete = checkPropertySetComplete(theirSet);
+            // Notify the victim
+            if (targetPlayer.socketId) {
+              io.to(targetPlayer.socketId).emit('card-taken', {
+                takerName: player.name, cardName: theirCard.name,
+                color: targetData?.theirColor, dealType: 'forceddeal',
+              });
+            }
           }
         }
       }
@@ -712,6 +729,7 @@ io.on('connection', (socket) => {
       case 'wild': {
         const color = targetData?.color || card.color;
         if (color) {
+          card.color = color as PropertyColor; // keep card.color in sync with the set it lives in
           const set = player.properties.find(p => p.color === color);
           if (set) { set.cards.push(card); set.isComplete = checkPropertySetComplete(set); }
         }

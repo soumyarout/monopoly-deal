@@ -164,7 +164,7 @@ export function PlayerHand({
                 isDiscardMode && isDiscardSelected && 'ring-2 ring-red-500 ring-offset-2 ring-offset-red-950 -translate-y-2',
                 isDiscardMode && !isDiscardSelected && 'opacity-60',
               )}
-              style={{ marginLeft: index > 0 ? '-20px' : '0', zIndex: isDiscardSelected ? 50 : index }}
+              style={{ marginLeft: index > 0 ? '-8px' : '0', zIndex: isDiscardSelected ? 50 : index }}
               onClick={() => handleCardClick(card)}
             >
               <CardComponent card={card} size="sm" isSelectable={playable || isDiscardMode}

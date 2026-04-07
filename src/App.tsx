@@ -6,13 +6,13 @@ import { PlayerHand } from '@/components/game/PlayerHand';
 import { PaymentModal } from '@/components/game/PaymentModal';
 import { ActionResponseModal } from '@/components/game/ActionResponseModal';
 import { Button } from '@/components/ui/button';
-import { Trophy, ArrowLeft, AlertCircle, Ban, Eye } from 'lucide-react';
+import { Trophy, ArrowLeft, AlertCircle, Ban, Eye, PackageOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useEffect, useRef } from 'react';
 
 function App() {
   const [state, actions] = useSocket();
-  const { room, currentPlayer, error, mustDiscard, pendingPayment, pendingAction, pendingJsnCounter, isSpectator } = state;
+  const { room, currentPlayer, error, mustDiscard, pendingPayment, pendingAction, pendingJsnCounter, isSpectator, cardTakenNotification } = state;
   const [showError, setShowError] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -41,23 +41,19 @@ function App() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [room?.turnStartedAt, room?.turnTimeLimit, room?.phase]);
 
+  // Auto-dismiss card-taken notification after 5 seconds
+  useEffect(() => {
+    if (cardTakenNotification) {
+      const timer = setTimeout(() => actions.clearCardTakenNotification(), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [cardTakenNotification]);
+
   // Active game state
   const activePlayer  = room?.players[room.currentPlayerIndex];
   const isMyTurn      = activePlayer?.id === currentPlayer?.id;
   const myPlayerData  = room?.players.find(p => p.id === currentPlayer?.id);
 
-  // Auto-end turn when 3 cards have been played and nothing is pending
-  useEffect(() => {
-    if (!isMyTurn || !myPlayerData || room?.turnPhase !== 'play') return;
-    if (
-      myPlayerData.cardsPlayedThisTurn >= 3 &&
-      (room?.pendingPayments.length ?? 0) === 0 &&
-      (room?.pendingActions.length ?? 0) === 0 &&
-      !mustDiscard
-    ) {
-      actions.endTurn();
-    }
-  }, [myPlayerData?.cardsPlayedThisTurn, room?.pendingPayments.length, room?.pendingActions.length, isMyTurn, mustDiscard]);
 
   if (!room) {
     return (
@@ -157,7 +153,10 @@ function App() {
           )}
           {room.pendingPayments.length > 0 && (
             <span className="text-xs bg-orange-500 text-white px-2 py-0.5 rounded-full animate-pulse">
-              Awaiting payment…
+              Waiting: {room.pendingPayments
+                .filter(pp => !pp.jsnState)
+                .map(pp => room.players.find(p => p.id === pp.debtorId)?.name ?? '?')
+                .join(', ')}
             </span>
           )}
           {room.pendingActions.length > 0 && (
@@ -188,6 +187,7 @@ function App() {
         <GameTable
           players={room.players}
           currentPlayerId={currentPlayer?.id || ''}
+          activePlayerId={activePlayer?.id ?? ''}
           version={room.version}
           isMyTurn={isMyTurn && !isSpectator}
           onMoveWildcard={actions.moveWildcard}
@@ -281,6 +281,36 @@ function App() {
           </div>
         );
       })()}
+
+      {/* Card-taken notification modal (Sly Deal / Forced Deal victim) */}
+      {cardTakenNotification && (
+        <div className="fixed inset-0 bg-black/60 z-[80] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xs w-full shadow-2xl overflow-hidden">
+            <div className="bg-amber-500 text-white px-4 py-4 flex items-center gap-3">
+              <PackageOpen className="w-6 h-6 flex-shrink-0" />
+              <div>
+                <p className="font-bold text-sm">Card Taken!</p>
+                <p className="text-amber-100 text-xs">
+                  {cardTakenNotification.dealType === 'slydeal'
+                    ? `${cardTakenNotification.takerName} used Sly Deal`
+                    : `${cardTakenNotification.takerName} used Forced Deal`}
+                </p>
+              </div>
+            </div>
+            <div className="p-4">
+              <p className="text-gray-700 text-sm mb-4">
+                Your <span className="font-bold">{cardTakenNotification.cardName}</span> was taken.
+              </p>
+              <Button
+                onClick={actions.clearCardTakenNotification}
+                className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold h-10"
+              >
+                OK
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Error toast */}
       {showError && error && (
