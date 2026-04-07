@@ -77,9 +77,11 @@ export function MainMenu({ onCreateRoom, onJoinRoom, onWatchRoom, connected = tr
         <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl max-w-md w-full p-5 sm:p-8 text-center relative z-10">
           {/* Logo with Car Theme */}
           <div className="mb-8">
-            <div className="w-28 h-28 mx-auto bg-gradient-to-br from-red-600 via-red-500 to-orange-500 rounded-2xl flex items-center justify-center shadow-xl mb-4 transform hover:scale-105 transition-transform">
-              <span className="text-6xl">🏎️</span>
-            </div>
+            <img
+              src="/ic_launcher_round.png"
+              alt="Monopoly Deal"
+              className="w-28 h-28 mx-auto mb-4 drop-shadow-xl transform hover:scale-105 transition-transform"
+            />
             <h1 className="text-3xl sm:text-4xl font-black text-gray-800 tracking-tight">MONOPOLY</h1>
             <p className="text-red-500 font-bold text-lg sm:text-xl tracking-widest">DEAL</p>
             <div className="flex items-center justify-center gap-2 mt-2">

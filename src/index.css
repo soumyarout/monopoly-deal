@@ -73,3 +73,38 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ── Full-screen PWA ─────────────────────────────────────────────────────── */
+
+html {
+  /* dvh = dynamic viewport height: shrinks/grows as mobile browser UI hides */
+  height: 100dvh;
+  /* Prevent elastic overscroll bounce (iOS rubber-band, Android pull-to-refresh) */
+  overscroll-behavior: none;
+}
+
+body {
+  height: 100dvh;
+  overscroll-behavior: none;
+  overflow: hidden;
+  /* Suppress the blue tap-flash on mobile */
+  -webkit-tap-highlight-color: transparent;
+  /* Prevent long-press callout (copy, share, etc.) on game elements */
+  -webkit-touch-callout: none;
+  /* No text selection on game UI — inputs are unaffected by this rule */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#root {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Safe-area padding for notched phones (iPhone X/Dynamic Island).
+   Applied to the outermost shell; inner components inherit via env(). */
+.safe-top    { padding-top:    env(safe-area-inset-top, 0px); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.safe-left   { padding-left:   env(safe-area-inset-left, 0px); }
+.safe-right  { padding-right:  env(safe-area-inset-right, 0px); }

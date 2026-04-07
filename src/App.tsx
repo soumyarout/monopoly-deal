@@ -131,9 +131,9 @@ function App() {
     : '';
 
   return (
-    <div className="h-screen bg-gray-900 flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="bg-gray-800 px-3 py-2 flex items-center justify-between gap-2 flex-shrink-0">
+    <div className="h-dvh bg-gray-900 flex flex-col overflow-hidden">
+      {/* Header — safe-top pushes content below the notch/Dynamic Island */}
+      <div className="bg-gray-800 px-3 py-2 flex items-center justify-between gap-2 flex-shrink-0 safe-top">
         <div className="flex items-center gap-2 sm:gap-4">
           <div className="text-white font-bold text-sm">
             <span className="text-gray-400 text-xs">ROOM</span> {room.id}

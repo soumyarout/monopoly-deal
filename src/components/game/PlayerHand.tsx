@@ -72,7 +72,7 @@ export function PlayerHand({
   };
 
   return (
-    <div className={cn('rounded-t-2xl p-2 sm:p-4 shadow-2xl flex-shrink-0', isDiscardMode ? 'bg-red-950' : 'bg-gray-900')}>
+    <div className={cn('rounded-t-2xl p-2 sm:p-4 shadow-2xl flex-shrink-0 safe-bottom', isDiscardMode ? 'bg-red-950' : 'bg-gray-900')}>
 
       {/* Discard banner */}
       {isDiscardMode && (
@@ -181,6 +181,8 @@ export function PlayerHand({
           card={selectedCard}
           room={room}
           currentPlayerId={currentPlayerId}
+          cardsPlayedThisTurn={cardsPlayedThisTurn}
+          maxCardsPerTurn={maxCardsPerTurn}
           onClose={() => setSelectedCard(null)}
           onPlay={handlePlayCard}
         />
@@ -195,18 +197,21 @@ interface CardActionModalProps {
   card: Card;
   room: GameRoom;
   currentPlayerId: string;
+  cardsPlayedThisTurn: number;
+  maxCardsPerTurn: number;
   onClose: () => void;
   onPlay: (targetData?: any) => void;
 }
 
 type ModalStep = 'main' | 'select-player' | 'select-their-property' | 'select-my-property' | 'select-color' | 'select-rent-target';
 
-function CardActionModal({ card, room, currentPlayerId, onClose, onPlay }: CardActionModalProps) {
+function CardActionModal({ card, room, currentPlayerId, cardsPlayedThisTurn, maxCardsPerTurn, onClose, onPlay }: CardActionModalProps) {
   const [step, setStep] = useState<ModalStep>('main');
   const [selectedPlayerId, setSelectedPlayerId]   = useState<string>('');
   const [selectedTheirCardId, setSelectedTheirCardId] = useState<string>('');
   const [selectedTheirColor, setSelectedTheirColor]   = useState<PropertyColor | ''>('');
   const [selectedColor, setSelectedColor]             = useState<PropertyColor | ''>('');
+  const [useDoubleRent, setUseDoubleRent]             = useState(false);
 
   const me = room.players.find(p => p.id === currentPlayerId)!;
   const opponents = room.players.filter(p => p.id !== currentPlayerId);
@@ -222,6 +227,12 @@ function CardActionModal({ card, room, currentPlayerId, onClose, onPlay }: CardA
         ? card.rentColors.filter(c => (me?.properties.find(p => p.color === c)?.cards.length ?? 0) > 0)
         : (me?.properties.filter(s => s.cards.length > 0).map(s => s.color) ?? []))
     : [];
+
+  // ── Double Rent integration ──
+  // drCard: a Double Rent card in hand (excluding the card being played, in case it IS the doublerent)
+  const drCard = isRent ? me?.hand.find(c => c.actionType === 'doublerent') : undefined;
+  // canDoubleRent: player has the card AND has 2 plays remaining for this turn (rent + doublerent)
+  const canDoubleRent = !!drCard && (cardsPlayedThisTurn + 2 <= maxCardsPerTurn);
 
   function handleMainPlay() {
     if (card.type === 'property' || card.type === 'cash') { onPlay(); return; }
@@ -281,7 +292,14 @@ function CardActionModal({ card, room, currentPlayerId, onClose, onPlay }: CardA
     }
     if (isRent) {
       if (isWildRent) { setStep('select-rent-target'); }
-      else { onPlay({ color }); onClose(); }
+      else {
+        onPlay({
+          color,
+          useDoubleRent: canDoubleRent && useDoubleRent,
+          doubleRentCardId: (canDoubleRent && useDoubleRent) ? drCard?.id : undefined,
+        });
+        onClose();
+      }
       return;
     }
   }
@@ -444,6 +462,34 @@ function CardActionModal({ card, room, currentPlayerId, onClose, onPlay }: CardA
               <p className="text-sm font-semibold text-gray-600 mb-3">
                 {isRent ? 'Charge rent for which color?' : `Attach ${card.name} to which set?`}
               </p>
+
+              {/* Double Rent toggle — only for rent cards */}
+              {isRent && drCard && (
+                <div
+                  onClick={() => canDoubleRent && setUseDoubleRent(v => !v)}
+                  className={cn(
+                    'mb-3 p-3 rounded-xl border-2 flex items-center gap-3 select-none',
+                    canDoubleRent ? 'cursor-pointer' : 'cursor-not-allowed opacity-40',
+                    canDoubleRent && useDoubleRent ? 'bg-purple-50 border-purple-400' : 'border-gray-200',
+                    canDoubleRent && !useDoubleRent && 'hover:border-purple-300'
+                  )}
+                >
+                  <div className={cn(
+                    'w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0',
+                    canDoubleRent && useDoubleRent ? 'bg-purple-600 border-purple-600' : 'border-gray-300'
+                  )}>
+                    {canDoubleRent && useDoubleRent && <span className="text-white text-[10px] font-bold">✓</span>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={cn('text-sm font-bold', canDoubleRent ? 'text-gray-800' : 'text-gray-400')}>
+                      Double the Rent!
+                      {!canDoubleRent && <span className="font-normal text-xs text-gray-400 ml-1">(need 2 plays remaining)</span>}
+                    </p>
+                    <p className="text-xs text-gray-500">Uses 1 extra play · charges ×2 rent</p>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
                 {(isRent ? availableRentColors : me?.properties.filter(s =>
                     card.actionType === 'house' ? (s.isComplete && !s.hasHouse)
@@ -453,15 +499,20 @@ function CardActionModal({ card, room, currentPlayerId, onClose, onPlay }: CardA
                   const set = me?.properties.find(p => p.color === color);
                   const rentTable = PROPERTY_SET_RENT[color];
                   const cards_count = set?.cards.length ?? 0;
-                  const rent = rentTable[Math.min(cards_count - 1, rentTable.length - 1)] ?? 0;
-                  const withHouse = set?.hasHouse ? rent + 3 : rent;
-                  const rentDisplay = isRent ? `$${withHouse}M rent` : '';
+                  const baseRent = rentTable[Math.min(cards_count - 1, rentTable.length - 1)] ?? 0;
+                  const withHouse = set?.hasHouse ? baseRent + 3 : baseRent;
+                  const finalRent = (canDoubleRent && useDoubleRent) ? withHouse * 2 : withHouse;
+                  const rentDisplay = isRent ? `$${finalRent}M rent` : '';
                   return (
                     <button key={color} onClick={() => handleColorSelected(color)}
                       className="w-full text-left px-4 py-3 rounded-xl border-2 border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-all flex items-center gap-3">
                       <div className={cn('w-6 h-6 rounded', getColorClass(color))} />
                       <span className="font-semibold text-gray-800">{getColorDisplayName(color)}</span>
-                      {rentDisplay && <span className="ml-auto text-green-600 font-bold text-sm">{rentDisplay}</span>}
+                      {rentDisplay && (
+                        <span className={cn('ml-auto font-bold text-sm', canDoubleRent && useDoubleRent ? 'text-purple-600' : 'text-green-600')}>
+                          {rentDisplay}{canDoubleRent && useDoubleRent ? ' ×2' : ''}
+                        </span>
+                      )}
                     </button>
                   );
                 })}
@@ -473,11 +524,20 @@ function CardActionModal({ card, room, currentPlayerId, onClose, onPlay }: CardA
           {step === 'select-rent-target' && isWildRent && (
             <div>
               <p className="text-sm font-semibold text-gray-600 mb-1">
-                Charge {getColorDisplayName(selectedColor as PropertyColor)} rent from:
+                Charge {getColorDisplayName(selectedColor as PropertyColor)} rent
+                {canDoubleRent && useDoubleRent ? ' (×2)' : ''} from:
               </p>
               <div className="space-y-2 mt-3">
                 {opponents.map(p => (
-                  <button key={p.id} onClick={() => { onPlay({ color: selectedColor, targetPlayerId: p.id }); onClose(); }}
+                  <button key={p.id} onClick={() => {
+                    onPlay({
+                      color: selectedColor,
+                      targetPlayerId: p.id,
+                      useDoubleRent: canDoubleRent && useDoubleRent,
+                      doubleRentCardId: (canDoubleRent && useDoubleRent) ? drCard?.id : undefined,
+                    });
+                    onClose();
+                  }}
                     className="w-full text-left px-4 py-3 rounded-xl border-2 border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-all">
                     <p className="font-semibold text-gray-800">{p.name}</p>
                   </button>

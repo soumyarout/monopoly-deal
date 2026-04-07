@@ -748,8 +748,19 @@ io.on('connection', (socket) => {
         const rentColor = targetData?.color as PropertyColor;
         if (!rentColor) { room.discardPile.push(card); break; }
 
-        const doubled = room.doubleRentActive;
-        room.doubleRentActive = false; // consumed
+        // Support inline Double Rent: when submitted together with a Rent card from the modal
+        let doubled = room.doubleRentActive;
+        room.doubleRentActive = false; // consume any standalone doublerent that was pre-played
+
+        if (targetData?.useDoubleRent && targetData?.doubleRentCardId) {
+          const drIdx = player.hand.findIndex((c: Card) => c.id === targetData.doubleRentCardId);
+          if (drIdx !== -1) {
+            const [drCard] = player.hand.splice(drIdx, 1);
+            room.discardPile.push(drCard);
+            doubled = true;
+            player.cardsPlayedThisTurn++; // Double Rent card counts as an extra play
+          }
+        }
 
         const rent = calculateRent(player, rentColor, doubled);
         room.discardPile.push(card);
