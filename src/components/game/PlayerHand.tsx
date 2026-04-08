@@ -252,8 +252,8 @@ function CardActionModal({ card, room, currentPlayerId, cardsPlayedThisTurn, max
   // ── Double Rent integration ──
   // drCard: a Double Rent card in hand (excluding the card being played, in case it IS the doublerent)
   const drCard = isRent ? me?.hand.find(c => c.actionType === 'doublerent') : undefined;
-  // canDoubleRent: player has the card AND has 2 plays remaining for this turn (rent + doublerent)
-  const canDoubleRent = !!drCard && (cardsPlayedThisTurn + 2 <= maxCardsPerTurn);
+  // canDoubleRent: player has the card AND has 1 play remaining (rent itself); Double Rent is free
+  const canDoubleRent = !!drCard && (cardsPlayedThisTurn + 1 <= maxCardsPerTurn);
 
   function handleMainPlay() {
     if (card.type === 'property' || card.type === 'cash') { onPlay(); return; }

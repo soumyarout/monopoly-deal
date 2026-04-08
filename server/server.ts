@@ -891,7 +891,11 @@ io.on('connection', (socket) => {
     const player = room.players[room.currentPlayerIndex];
     if (player.id !== playerId || room.turnPhase !== 'play') return;
 
-    if (player.cardsPlayedThisTurn >= 3) {
+    // Double Rent is a free modifier — check BEFORE removing card so we can peek at its type
+    const peekCard = player.hand.find(c => c.id === cardId);
+    const isDoubleRentCard = peekCard?.type === 'action' && (peekCard as any).actionType === 'doublerent';
+
+    if (player.cardsPlayedThisTurn >= 3 && !isDoubleRentCard) {
       socket.emit('error', { message: 'You can only play 3 cards per turn' });
       return;
     }
@@ -944,7 +948,7 @@ io.on('connection', (socket) => {
             const [drCard] = player.hand.splice(drIdx, 1);
             room.discardPile.push(drCard);
             doubled = true;
-            player.cardsPlayedThisTurn++; // Double Rent card counts as an extra play
+            // Double Rent is free — does NOT consume one of the 3 plays
           }
         }
 
@@ -963,7 +967,10 @@ io.on('connection', (socket) => {
       }
     }
 
-    player.cardsPlayedThisTurn++;
+    // Double Rent is a free modifier card — it does not consume one of the 3 plays per turn
+    if (!isDoubleRentCard) {
+      player.cardsPlayedThisTurn++;
+    }
 
     const winner = checkWinner(room);
     if (winner) {
