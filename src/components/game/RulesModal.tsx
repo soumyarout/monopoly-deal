@@ -7,13 +7,6 @@ interface RulesModalProps {
   onClose: () => void;
 }
 
-interface Section {
-  id: string;
-  title: string;
-  emoji: string;
-  content: React.ReactNode;
-}
-
 function SectionBlock({ title, emoji, children }: { title: string; emoji: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(true);
   return (
