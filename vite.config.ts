@@ -21,7 +21,7 @@ export default defineConfig({
     inspectAttr(),
     react(),
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'favicon.svg', 'favicon-96x96.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'Monopoly Deal',
