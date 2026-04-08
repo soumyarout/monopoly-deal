@@ -21,8 +21,23 @@ const REASON_LABEL: Record<string, string> = {
   birthday:      "It's My Birthday",
 };
 
+/** Greedily select smallest bank cards that cover the debt (cash-first, no change). */
+function autoSelectBank(bank: Card[], amount: number): Set<string> {
+  const sorted = [...bank].sort((a, b) => a.value - b.value);
+  const sel = new Set<string>();
+  let total = 0;
+  for (const card of sorted) {
+    if (total >= amount) break;
+    sel.add(card.id);
+    total += card.value;
+  }
+  return sel;
+}
+
 export function PaymentModal({ payment, myPlayer, creditorName, creditorPlayer, onPay, onJustSayNo }: PaymentModalProps) {
-  const [selectedBankIds, setSelectedBankIds]     = useState<Set<string>>(new Set());
+  const [selectedBankIds, setSelectedBankIds]     = useState<Set<string>>(
+    () => autoSelectBank(myPlayer.bank, payment.amount)
+  );
   const [selectedProps, setSelectedProps]         = useState<{ color: PropertyColor; cardId: string }[]>([]);
   const [showCreditor, setShowCreditor]           = useState(false);
 
@@ -226,7 +241,7 @@ export function PaymentModal({ payment, myPlayer, creditorName, creditorPlayer, 
           )}
           <Button
             onClick={handleConfirm}
-            disabled={!canConfirm && totalSelected === 0 && hasAnyCards}
+            disabled={!canConfirm}
             className={cn(
               'w-full h-12 text-sm font-bold',
               canConfirm ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-gray-200 text-gray-400'

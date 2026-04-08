@@ -27,10 +27,11 @@ interface SocketState {
   spectatorInfo: Spectator | null;
   error: string | null;
   mustDiscard: number;
-  pendingPayment: PendingPayment | null; // payment this player owes
-  pendingAction: PendingAction | null;   // deal breaker targeting this player
-  pendingJsnCounter: { paymentId: string; debtorName: string } | null; // creditor counter-JSN opportunity
+  pendingPayment: PendingPayment | null;
+  pendingAction: PendingAction | null;
+  pendingJsnCounter: { paymentId: string; debtorName: string } | null;
   cardTakenNotification: CardTakenNotification | null;
+  jsnNotification: { message: string } | null;
 }
 
 interface SocketActions {
@@ -43,6 +44,7 @@ interface SocketActions {
   addAIPlayer: () => void;
   removeAIPlayer: (aiPlayerId: string) => void;
   drawCards: () => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   playCard: (card: Card, targetData?: any) => void;
   endTurn: () => void;
   discardCards: (cards: Card[]) => void;
@@ -52,6 +54,7 @@ interface SocketActions {
   respondToAction: (actionId: string, response: 'accept' | 'jsn', cardId?: string) => void;
   moveWildcard: (cardId: string, fromColor: PropertyColor, toColor: PropertyColor) => void;
   clearCardTakenNotification: () => void;
+  clearJsnNotification: () => void;
 }
 
 export function useSocket(): [SocketState, SocketActions] {
@@ -68,6 +71,7 @@ export function useSocket(): [SocketState, SocketActions] {
     pendingAction: null,
     pendingJsnCounter: null,
     cardTakenNotification: null,
+    jsnNotification: null,
   });
 
   useEffect(() => {
@@ -85,13 +89,9 @@ export function useSocket(): [SocketState, SocketActions] {
 
     socket.on('connect', () => {
       setState(p => ({ ...p, connected: true, error: null }));
-      // Auto-rejoin room on reconnect
       const storedRoomId = localStorage.getItem(ROOM_ID_KEY);
       if (storedRoomId) {
-        socket.emit('reconnect-room', {
-          roomId: storedRoomId,
-          persistentPlayerId: getPersistentId(),
-        });
+        socket.emit('reconnect-room', { roomId: storedRoomId, persistentPlayerId: getPersistentId() });
       }
     });
 
@@ -113,9 +113,7 @@ export function useSocket(): [SocketState, SocketActions] {
     socket.on('reconnected', ({ room, player }: { room: GameRoom; player: Player }) => {
       localStorage.setItem(ROOM_ID_KEY, room.id);
       setState(p => {
-        // Restore pendingPayment if this player is a debtor
         const pendingPayment = room.pendingPayments.find(pm => pm.debtorId === player.id && !pm.jsnState) ?? null;
-        // Restore pendingAction if this player is the responder
         const pendingAction = room.pendingActions.find(a => a.responderId === player.id) ?? null;
         return { ...p, room, currentPlayer: player, isSpectator: false, spectatorInfo: null, error: null, pendingPayment, pendingAction };
       });
@@ -141,11 +139,9 @@ export function useSocket(): [SocketState, SocketActions] {
     socket.on('game-ended',           ({ room }: { room: GameRoom }) => setState(p => ({ ...p, room })));
     socket.on('room-updated',         ({ room }: { room: GameRoom }) => {
       setState(p => {
-        // Re-derive pendingAction from updated room
         const pendingAction = p.currentPlayer
           ? (room.pendingActions.find(a => a.responderId === p.currentPlayer!.id) ?? null)
           : null;
-        // Clear pendingJsnCounter if payment no longer has jsnState awaiting us
         const pendingJsnCounter = p.pendingJsnCounter
           ? (room.pendingPayments.find(pm =>
               pm.id === p.pendingJsnCounter!.paymentId &&
@@ -165,7 +161,6 @@ export function useSocket(): [SocketState, SocketActions] {
     socket.on('turn-ended', ({ room }: { room: GameRoom }) =>
       setState(p => ({ ...p, room, mustDiscard: 0, pendingPayment: null, pendingAction: null, pendingJsnCounter: null })));
 
-    // Payment request directed at this player
     socket.on('payment-request', ({ paymentId, room }: {
       paymentId: string; creditorId: string; creditorName: string;
       amount: number; reason: string; room: GameRoom;
@@ -180,7 +175,6 @@ export function useSocket(): [SocketState, SocketActions] {
       });
     });
 
-    // Deal Breaker JSN request — target can accept or play JSN
     socket.on('deal-breaker-request', (payload: {
       actionId: string; actorName: string; color: string; room: GameRoom;
     }) => {
@@ -190,7 +184,6 @@ export function useSocket(): [SocketState, SocketActions] {
       });
     });
 
-    // Deal Breaker JSN counter — actor can counter the target's JSN
     socket.on('deal-breaker-counter', (payload: {
       actionId: string; actorName: string; color: string; jsnCount: number; room: GameRoom;
     }) => {
@@ -200,18 +193,21 @@ export function useSocket(): [SocketState, SocketActions] {
       });
     });
 
-    // JSN counter-opportunity on a payment (creditor can counter debtor's JSN)
     socket.on('jsn-counter-opportunity', ({ paymentId, debtorName, room }: {
       paymentId: string; debtorName: string; room: GameRoom;
     }) => {
       setState(p => ({ ...p, room, pendingJsnCounter: { paymentId, debtorName } }));
     });
 
-    // Card taken notification (Sly Deal / Forced Deal victim)
     socket.on('card-taken', ({ takerName, cardName, color, dealType }: {
       takerName: string; cardName: string; color?: string; dealType: string;
     }) => {
       setState(p => ({ ...p, cardTakenNotification: { takerName, cardName, color, dealType } }));
+    });
+
+    // Notification when someone plays Just Say No cancelling your action/demand
+    socket.on('jsn-notification', ({ message }: { message: string }) => {
+      setState(p => ({ ...p, jsnNotification: { message } }));
     });
 
     socket.on('error', ({ message }: { message: string }) =>
@@ -245,7 +241,7 @@ export function useSocket(): [SocketState, SocketActions] {
     localStorage.removeItem(ROOM_ID_KEY);
     socketRef.current?.disconnect();
     setTimeout(() => socketRef.current?.connect(), 100);
-    setState({ connected: false, room: null, currentPlayer: null, isSpectator: false, spectatorInfo: null, error: null, mustDiscard: 0, pendingPayment: null, pendingAction: null, pendingJsnCounter: null, cardTakenNotification: null });
+    setState({ connected: false, room: null, currentPlayer: null, isSpectator: false, spectatorInfo: null, error: null, mustDiscard: 0, pendingPayment: null, pendingAction: null, pendingJsnCounter: null, cardTakenNotification: null, jsnNotification: null });
   }, []);
 
   const addAIPlayer = useCallback(() => {
@@ -263,7 +259,7 @@ export function useSocket(): [SocketState, SocketActions] {
       socketRef.current?.emit('draw-cards', { roomId: state.room.id, playerId: state.currentPlayer.id });
   }, [state.room, state.currentPlayer]);
 
-  const playCard = useCallback((card: Card, targetData?: any) => {
+  const playCard = useCallback((card: Card, targetData?: unknown) => {
     if (state.room && state.currentPlayer)
       socketRef.current?.emit('play-card', { roomId: state.room.id, playerId: state.currentPlayer.id, cardId: card.id, targetData });
   }, [state.room, state.currentPlayer]);
@@ -314,11 +310,15 @@ export function useSocket(): [SocketState, SocketActions] {
     setState(p => ({ ...p, cardTakenNotification: null }));
   }, []);
 
+  const clearJsnNotification = useCallback(() => {
+    setState(p => ({ ...p, jsnNotification: null }));
+  }, []);
+
   return [state, {
     createRoom, joinRoom, watchRoom, startGame, toggleReady, leaveRoom,
     addAIPlayer, removeAIPlayer, drawCards, playCard, endTurn,
     discardCards, payAmount, justSayNo, counterJsn, respondToAction, moveWildcard,
-    clearCardTakenNotification,
+    clearCardTakenNotification, clearJsnNotification,
   }];
 }
 

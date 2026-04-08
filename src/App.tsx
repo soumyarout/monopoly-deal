@@ -10,14 +10,23 @@ import { Button } from '@/components/ui/button';
 import { Trophy, ArrowLeft, AlertCircle, Ban, Eye, PackageOpen, BookOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useEffect, useRef } from 'react';
+import { sounds } from '@/hooks/useSound';
 
 function App() {
   const [state, actions] = useSocket();
-  const { room, currentPlayer, error, mustDiscard, pendingPayment, pendingAction, pendingJsnCounter, isSpectator, cardTakenNotification } = state;
+  const { room, currentPlayer, error, mustDiscard, pendingPayment, pendingAction, pendingJsnCounter, isSpectator, cardTakenNotification, jsnNotification } = state;
   const [showError, setShowError] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevIsMyTurnRef = useRef(false);
+  const prevPhasRef = useRef<string | null>(null);
+  const prevPendingPayRef = useRef(false);
+
+  // Active game state — computed early so useEffects below can reference them
+  const activePlayer  = room?.players[room.currentPlayerIndex];
+  const isMyTurn      = activePlayer?.id === currentPlayer?.id;
+  const myPlayerData  = room?.players.find(p => p.id === currentPlayer?.id);
 
   useEffect(() => {
     if (error) {
@@ -46,16 +55,51 @@ function App() {
   // Auto-dismiss card-taken notification after 5 seconds
   useEffect(() => {
     if (cardTakenNotification) {
+      sounds.cardTaken();
       const timer = setTimeout(() => actions.clearCardTakenNotification(), 5000);
       return () => clearTimeout(timer);
     }
   }, [cardTakenNotification]);
 
-  // Active game state
-  const activePlayer  = room?.players[room.currentPlayerIndex];
-  const isMyTurn      = activePlayer?.id === currentPlayer?.id;
-  const myPlayerData  = room?.players.find(p => p.id === currentPlayer?.id);
+  // Auto-dismiss JSN notification after 4 seconds
+  useEffect(() => {
+    if (jsnNotification) {
+      sounds.jsnPlayed();
+      const timer = setTimeout(() => actions.clearJsnNotification(), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [jsnNotification]);
 
+  // Sound: your turn starts
+  useEffect(() => {
+    if (isMyTurn && !prevIsMyTurnRef.current && room?.phase === 'playing') {
+      sounds.yourTurn();
+    }
+    prevIsMyTurnRef.current = isMyTurn;
+  }, [isMyTurn]);
+
+  // Sound: timer countdown
+  useEffect(() => {
+    if (secondsLeft !== null && secondsLeft > 0 && secondsLeft <= 10 && isMyTurn) {
+      if (secondsLeft <= 5) sounds.timerUrgent();
+      else sounds.timerTick();
+    }
+  }, [secondsLeft]);
+
+  // Sound: payment due
+  useEffect(() => {
+    if (pendingPayment && !prevPendingPayRef.current) sounds.paymentDue();
+    prevPendingPayRef.current = !!pendingPayment;
+  }, [pendingPayment]);
+
+  // Sound: game ended
+  useEffect(() => {
+    if (room?.phase === 'ended' && prevPhasRef.current !== 'ended') {
+      const isWinner = room.winner?.id === currentPlayer?.id;
+      if (isWinner) sounds.winner(); else sounds.gameOver();
+    }
+    prevPhasRef.current = room?.phase ?? null;
+  }, [room?.phase]);
 
   if (!room) {
     return (
@@ -128,9 +172,12 @@ function App() {
     : undefined;
   const creditorName = creditorPlayer?.name ?? 'Opponent';
 
-  // Resolve actor name for action response modal
+  // Resolve actor name for action response modal.
+  // When jsnCount is odd, this player is the Deal Breaker actor receiving a counter-JSN —
+  // so the "other person" label should be the responder, not themselves.
+  const pendingActionIsCounter = pendingAction && pendingAction.jsnCount > 0 && pendingAction.jsnCount % 2 === 1;
   const actionActorName = pendingAction
-    ? (room.players.find(p => p.id === pendingAction.actorId)?.name ?? 'Opponent')
+    ? (room.players.find(p => p.id === (pendingActionIsCounter ? pendingAction.responderId : pendingAction.actorId))?.name ?? 'Opponent')
     : '';
 
   return (
@@ -320,6 +367,20 @@ function App() {
                 OK
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* JSN notification toast */}
+      {jsnNotification && (
+        <div
+          className="fixed top-16 left-1/2 -translate-x-1/2 z-[90] max-w-sm w-full px-4"
+          onClick={actions.clearJsnNotification}
+        >
+          <div className="bg-purple-700 text-white rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-3 cursor-pointer">
+            <Ban className="w-5 h-5 flex-shrink-0" />
+            <p className="text-sm font-semibold leading-snug flex-1">{jsnNotification.message}</p>
+            <span className="text-purple-300 text-xs">tap to dismiss</span>
           </div>
         </div>
       )}

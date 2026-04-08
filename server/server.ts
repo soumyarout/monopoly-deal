@@ -213,6 +213,64 @@ function processPayment(
   }
 }
 
+// ─── AI Helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Rearrange multi-color wildcards to the set where they contribute most
+ * to completion. Free action (spec §9.3).
+ */
+function aiRearrangeWildcards(player: Player): void {
+  for (const set of player.properties) {
+    for (let i = set.cards.length - 1; i >= 0; i--) {
+      const card = set.cards[i];
+      if (!card.colors || card.colors.length < 2) continue;
+      const validColors = [...new Set(card.colors)] as PropertyColor[];
+      if (validColors.length < 2) continue;
+
+      const reqCurrent = PROPERTY_SET_REQUIREMENTS[set.color] ?? 3;
+      let bestCol: PropertyColor = set.color;
+      let bestGain = 0;
+
+      for (const col of validColors) {
+        if (col === set.color) continue;
+        const reqTarget = PROPERTY_SET_REQUIREMENTS[col] ?? 3;
+        const gain = (1 / reqTarget) - (1 / reqCurrent);
+        if (gain > bestGain) { bestGain = gain; bestCol = col; }
+      }
+
+      if (bestCol !== set.color) {
+        set.cards.splice(i, 1);
+        set.isComplete = checkPropertySetComplete(set);
+        if (!set.isComplete) { set.hasHouse = false; set.hasHotel = false; }
+        card.color = bestCol;
+        const toSet = player.properties.find(p => p.color === bestCol);
+        if (toSet) { toSet.cards.push(card); toSet.isComplete = checkPropertySetComplete(toSet); }
+      }
+    }
+  }
+}
+
+/**
+ * For a wildcard with multiple valid colors, return the color where placing
+ * it makes the most progress toward a complete set.
+ */
+function aiBestColorForWild(player: Player, card: Card): PropertyColor {
+  const validColors = [...new Set(card.colors ?? [])] as PropertyColor[];
+  if (validColors.length === 0) return card.color as PropertyColor;
+  if (validColors.length === 1) return validColors[0];
+
+  let bestCol = validColors[0];
+  let bestScore = -1;
+  for (const col of validColors) {
+    const set = player.properties.find(p => p.color === col);
+    const req = PROPERTY_SET_REQUIREMENTS[col] ?? 3;
+    const cur = set?.cards.length ?? 0;
+    const score = (cur + 1) / req + (1 / req) * 0.01;
+    if (score > bestScore) { bestScore = score; bestCol = col; }
+  }
+  return bestCol;
+}
+
 // ─── AI Turn ─────────────────────────────────────────────────────────────────
 
 function processAITurn(room: GameRoom, player: Player): void {
@@ -224,6 +282,9 @@ function processAITurn(room: GameRoom, player: Player): void {
   player.hadZeroCardsAtEnd = false;
   player.hand.push(...safeDraw(room, drawCount));
 
+  // Free action: rearrange wildcards before playing
+  aiRearrangeWildcards(player);
+
   let played = 0;
   while (played < 3 && player.hand.length > 0) {
     const props  = player.hand.filter(c => c.type === 'property' || c.type === 'wild');
@@ -233,40 +294,60 @@ function processAITurn(room: GameRoom, player: Player): void {
     const others = room.players.filter(p => p.id !== player.id);
 
     let chosenCard: Card | null = null;
-    let chosenTarget: any = null;
+    let chosenTarget: Record<string, unknown> | null = null;
 
-    // 1. PassGo — draw extra cards first
-    const passgo = acts.find(c => c.actionType === 'passgo');
-    if (passgo) { chosenCard = passgo; }
+    const mySets = player.properties.filter(s => s.isComplete).length;
 
-    // 2. Birthday — collect $2 from everyone with something to pay
+    // 1. Play any card that would COMPLETE a set immediately
     if (!chosenCard) {
-      const bday = acts.find(c => c.actionType === 'birthday');
-      if (bday && others.some(p => p.bank.length > 0 || p.properties.some(s => s.cards.length > 0))) {
-        chosenCard = bday;
+      for (const card of props) {
+        const color = (card.type === 'wild' && card.colors?.length)
+          ? aiBestColorForWild(player, card)
+          : card.color as PropertyColor;
+        if (!color) continue;
+        const set = player.properties.find(p => p.color === color);
+        const req = PROPERTY_SET_REQUIREMENTS[color] ?? 3;
+        if (set && set.cards.length === req - 1 && !set.isComplete) {
+          chosenCard = card; chosenTarget = { color }; break;
+        }
       }
     }
 
-    // 3. Debt Collector — collect $5 from richest opponent
+    // 2. PassGo — draw more cards if hand is thin
     if (!chosenCard) {
-      const dc = acts.find(c => c.actionType === 'debtcollector');
-      if (dc && others.length > 0) {
-        const richest = others.reduce((b, p) =>
-          p.bank.reduce((s, c) => s + c.value, 0) > b.bank.reduce((s, c) => s + c.value, 0) ? p : b, others[0]);
-        chosenCard = dc;
-        chosenTarget = { targetPlayerId: richest.id };
+      const passgo = acts.find(c => c.actionType === 'passgo');
+      if (passgo && player.hand.length <= 5) chosenCard = passgo;
+    }
+
+    // 3. Deal Breaker — steal a complete set from opponent
+    if (!chosenCard) {
+      const db = acts.find(c => c.actionType === 'dealbreaker');
+      if (db) {
+        for (const opp of others) {
+          for (const set of opp.properties.filter(s => s.isComplete)) {
+            const mySet = player.properties.find(p => p.color === set.color);
+            if (!mySet?.isComplete) {
+              chosenCard = db; chosenTarget = { targetPlayerId: opp.id, color: set.color }; break;
+            }
+          }
+          if (chosenCard) break;
+        }
       }
     }
 
-    // 4. Sly Deal — steal highest-value property from an incomplete set
+    // 4. Sly Deal — steal a card that helps complete our set
     if (!chosenCard) {
       const sly = acts.find(c => c.actionType === 'slydeal');
       if (sly) {
-        let bestOpp: Player | null = null, bestColor: PropertyColor | null = null, bestCardId: string | null = null, bestVal = -1;
+        let bestOpp: Player | null = null, bestColor: PropertyColor | null = null, bestCardId: string | null = null, bestScore = -1;
         for (const opp of others) {
           for (const set of opp.properties.filter(s => !s.isComplete && s.cards.length > 0)) {
             for (const c of set.cards) {
-              if (c.value > bestVal) { bestVal = c.value; bestOpp = opp; bestColor = set.color; bestCardId = c.id; }
+              const mySet = player.properties.find(p => p.color === set.color);
+              const req = PROPERTY_SET_REQUIREMENTS[set.color] ?? 3;
+              const cur = mySet?.cards.length ?? 0;
+              const score = (cur + 1) / req + c.value / 20;
+              if (score > bestScore) { bestScore = score; bestOpp = opp; bestColor = set.color; bestCardId = c.id; }
             }
           }
         }
@@ -274,7 +355,39 @@ function processAITurn(room: GameRoom, player: Player): void {
       }
     }
 
-    // 5. Best Rent — charge the color that earns most
+    // 5. Properties — prioritize sets closest to completion
+    if (!chosenCard && props.length > 0) {
+      const sorted = [...props].sort((a, b) => {
+        const ac = (a.type === 'wild' && a.colors?.length ? aiBestColorForWild(player, a) : a.color) as PropertyColor;
+        const bc = (b.type === 'wild' && b.colors?.length ? aiBestColorForWild(player, b) : b.color) as PropertyColor;
+        const aSet = player.properties.find(p => p.color === ac);
+        const bSet = player.properties.find(p => p.color === bc);
+        const aReq = PROPERTY_SET_REQUIREMENTS[ac] ?? 3;
+        const bReq = PROPERTY_SET_REQUIREMENTS[bc] ?? 3;
+        return (((bSet?.cards.length ?? 0) + 1) / bReq) - (((aSet?.cards.length ?? 0) + 1) / aReq);
+      });
+      const best = sorted[0];
+      const color = (best.type === 'wild' && best.colors?.length ? aiBestColorForWild(player, best) : best.color) as PropertyColor;
+      if (color) { chosenCard = best; chosenTarget = { color }; }
+    }
+
+    // 6. Birthday / Debt Collector — collect money
+    if (!chosenCard) {
+      const bday = acts.find(c => c.actionType === 'birthday');
+      if (bday && others.some(p => p.bank.length > 0 || p.properties.some(s => s.cards.length > 0))) {
+        chosenCard = bday;
+      }
+    }
+    if (!chosenCard) {
+      const dc = acts.find(c => c.actionType === 'debtcollector');
+      if (dc && others.length > 0) {
+        const richest = others.reduce((b, p) =>
+          p.bank.reduce((s, c) => s + c.value, 0) > b.bank.reduce((s, c) => s + c.value, 0) ? p : b, others[0]);
+        chosenCard = dc; chosenTarget = { targetPlayerId: richest.id };
+      }
+    }
+
+    // 7. Rent — only if meaningful amount or already winning
     if (!chosenCard && rents.length > 0) {
       let bestRentCard: Card | null = null, bestRentColor: PropertyColor | null = null, bestRent = 0;
       for (const rc of rents) {
@@ -286,31 +399,30 @@ function processAITurn(room: GameRoom, player: Player): void {
           if (r > bestRent) { bestRent = r; bestRentColor = col; bestRentCard = rc; }
         }
       }
-      if (bestRentCard && bestRentColor && bestRent > 0) { chosenCard = bestRentCard; chosenTarget = { color: bestRentColor }; }
+      if (bestRentCard && bestRentColor && (bestRent >= 3 || mySets >= 1)) {
+        chosenCard = bestRentCard; chosenTarget = { color: bestRentColor };
+      }
     }
 
-    // 6. Properties — prioritize near-complete sets
-    if (!chosenCard && props.length > 0) {
-      const sorted = [...props].sort((a, b) => {
-        const ac = (a.color || a.colors?.[0]) as PropertyColor;
-        const bc = (b.color || b.colors?.[0]) as PropertyColor;
-        const aSet = player.properties.find(p => p.color === ac);
-        const bSet = player.properties.find(p => p.color === bc);
-        const aReq = PROPERTY_SET_REQUIREMENTS[ac] ?? 3;
-        const bReq = PROPERTY_SET_REQUIREMENTS[bc] ?? 3;
-        return ((bSet?.cards.length ?? 0) / bReq) - ((aSet?.cards.length ?? 0) / aReq);
-      });
-      chosenCard = sorted[0];
-      chosenTarget = { color: chosenCard.color || chosenCard.colors?.[0] };
+    // 8. PassGo any time
+    if (!chosenCard) {
+      const passgo = acts.find(c => c.actionType === 'passgo');
+      if (passgo) chosenCard = passgo;
     }
 
-    // 7. Cash — bank smallest bills first to preserve high-value cards
+    // 9. Small cash (< 4M)
+    if (!chosenCard && cash.length > 0) {
+      const small = cash.filter(c => c.value < 4).sort((a, b) => a.value - b.value);
+      if (small.length > 0) chosenCard = small[0];
+    }
+
+    // 10. Any remaining action we can discard
+    if (!chosenCard && acts.length > 0) chosenCard = acts[0];
+
+    // 11. Any remaining cash
     if (!chosenCard && cash.length > 0) {
       chosenCard = [...cash].sort((a, b) => a.value - b.value)[0];
     }
-
-    // 8. Discard leftover action cards we can't use
-    if (!chosenCard && acts.length > 0) { chosenCard = acts[0]; }
 
     if (!chosenCard) break;
 
@@ -319,7 +431,7 @@ function processAITurn(room: GameRoom, player: Player): void {
     player.hand.splice(idx, 1);
 
     if (chosenCard.type === 'property' || chosenCard.type === 'wild') {
-      const color = (chosenTarget?.color || chosenCard.color) as PropertyColor | undefined;
+      const color = ((chosenTarget?.color as PropertyColor) || (chosenCard.type === 'wild' && chosenCard.colors?.length ? aiBestColorForWild(player, chosenCard) : chosenCard.color)) as PropertyColor | undefined;
       if (color) {
         chosenCard.color = color;
         const set = player.properties.find(p => p.color === color);
@@ -338,7 +450,6 @@ function processAITurn(room: GameRoom, player: Player): void {
       if (room.pendingPayments.length > 0) break;
       continue;
     } else {
-      // Action card — delegate to handleActionCard (handles discard + side effects)
       handleActionCard(room, roomId, player, chosenCard, chosenTarget);
       played++;
       if (room.pendingPayments.length > 0 || room.pendingActions.length > 0) break;
@@ -349,20 +460,6 @@ function processAITurn(room: GameRoom, player: Player): void {
   }
 
   player.cardsPlayedThisTurn = 0;
-  player.hadZeroCardsAtEnd = player.hand.length === 0;
-
-  while (player.hand.length > 7) {
-    room.discardPile.push(player.hand.pop()!);
-  }
-
-  const winner = checkWinner(room);
-  if (winner) {
-    room.winner = winner; room.phase = 'ended';
-    clearTurnTimer(roomId);
-    io.to(roomId).emit('game-ended', { room, winner });
-    return;
-  }
-
   advanceTurn(room, roomId);
 }
 
@@ -968,7 +1065,15 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // No counter possible — cancel payment immediately
+    // No counter possible — notify creditor their demand was cancelled, then cancel
+    if (creditor?.socketId) {
+      const reasonLabel = payment.reason === 'rent' ? 'rent demand'
+        : payment.reason === 'birthday' ? "Birthday demand"
+        : 'Debt Collector';
+      io.to(creditor.socketId).emit('jsn-notification', {
+        message: `${debtor.name} cancelled your ${reasonLabel} with Just Say No!`,
+      });
+    }
     room.pendingPayments = room.pendingPayments.filter(p => p.id !== paymentId);
     io.to(roomId).emit('just-say-no-played', { room, debtorId: debtor.id, paymentId });
 
@@ -1150,7 +1255,16 @@ io.on('connection', (socket) => {
       }, 15000);
       actionTimers.set(actionId, timer);
     } else {
-      // No counter possible — resolve with current jsnCount
+      // No counter possible — notify the party whose action is being cancelled
+      if (action.jsnCount % 2 === 1) {
+        // Odd = Deal Breaker cancelled → tell actor
+        const actorPlayer = room.players.find(p => p.id === action.actorId);
+        if (actorPlayer?.socketId) {
+          io.to(actorPlayer.socketId).emit('jsn-notification', {
+            message: `${responder.name} cancelled your Deal Breaker with Just Say No!`,
+          });
+        }
+      }
       resolveAction(room, roomId, action);
     }
   });

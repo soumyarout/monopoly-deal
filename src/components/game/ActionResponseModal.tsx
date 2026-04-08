@@ -47,7 +47,9 @@ export function ActionResponseModal({ action, myPlayer, actorName, onAccept, onJ
           </div>
           <p className="text-red-200 text-xs leading-snug">
             {isCounter
-              ? `${actorName} countered your Just Say No! Play another JSN to cancel?`
+              ? action.jsnCount === 1
+                ? `${actorName} played Just Say No against your Deal Breaker! Counter with yours?`
+                : `${actorName} countered your Just Say No! Play another to cancel?`
               : `${actorName} is stealing your complete ${colorLabel} set!`
             }
           </p>
