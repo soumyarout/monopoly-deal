@@ -218,69 +218,131 @@ function processPayment(
 function processAITurn(room: GameRoom, player: Player): void {
   if (!player.isAI) return;
 
+  const roomId = [...rooms.entries()].find(([, r]) => r === room)?.[0] || '';
+
   const drawCount = player.hadZeroCardsAtEnd ? 5 : 2;
   player.hadZeroCardsAtEnd = false;
-  const drawn = safeDraw(room, drawCount);
-  player.hand.push(...drawn);
+  player.hand.push(...safeDraw(room, drawCount));
 
   let played = 0;
   while (played < 3 && player.hand.length > 0) {
-    const props = player.hand.filter(c => c.type === 'property' || c.type === 'wild');
-    const cash  = player.hand.filter(c => c.type === 'cash');
-    const acts  = player.hand.filter(c => c.type === 'action' && c.actionType !== 'sayno');
-    const rents = player.hand.filter(c => c.type === 'rent');
+    const props  = player.hand.filter(c => c.type === 'property' || c.type === 'wild');
+    const cash   = player.hand.filter(c => c.type === 'cash');
+    const acts   = player.hand.filter(c => c.type === 'action' && c.actionType !== 'sayno' && c.actionType !== 'doublerent');
+    const rents  = player.hand.filter(c => c.type === 'rent');
+    const others = room.players.filter(p => p.id !== player.id);
 
-    let card: Card | null = null;
-    let targetData: any = null;
+    let chosenCard: Card | null = null;
+    let chosenTarget: any = null;
 
-    if (props.length > 0) {
-      card = props[0];
-      targetData = { color: card.color || card.colors?.[0] };
-    } else if (cash.length > 0) {
-      card = cash[0];
-    } else if (acts.length > 0) {
-      card = acts[0];
-      if (card.actionType === 'passgo') {
-        player.hand.splice(player.hand.findIndex(c => c.id === card!.id), 1);
-        room.discardPile.push(card);
-        player.hand.push(...safeDraw(room, 2));
-        played++;
-        continue;
+    // 1. PassGo — draw extra cards first
+    const passgo = acts.find(c => c.actionType === 'passgo');
+    if (passgo) { chosenCard = passgo; }
+
+    // 2. Birthday — collect $2 from everyone with something to pay
+    if (!chosenCard) {
+      const bday = acts.find(c => c.actionType === 'birthday');
+      if (bday && others.some(p => p.bank.length > 0 || p.properties.some(s => s.cards.length > 0))) {
+        chosenCard = bday;
       }
-    } else if (rents.length > 0) {
-      card = rents[0];
-      // Pick a color we own
-      const rentable = (card.rentColors || []).find(color => {
-        const s = player.properties.find(p => p.color === color);
-        return s && s.cards.length > 0;
-      });
-      if (!rentable) { player.hand.splice(player.hand.findIndex(c => c.id === card!.id), 1); room.discardPile.push(card); played++; continue; }
-      const rent = calculateRent(player, rentable, false);
-      const roomId = [...rooms.entries()].find(([, r]) => r === room)?.[0] || '';
-      player.hand.splice(player.hand.findIndex(c => c.id === card!.id), 1);
-      room.discardPile.push(card);
-      const opponents = room.players.filter(p => p.id !== player.id);
-      requestPayments(room, roomId, player, opponents, rent, 'rent');
-      played++;
-      continue;
     }
 
-    if (!card) break;
+    // 3. Debt Collector — collect $5 from richest opponent
+    if (!chosenCard) {
+      const dc = acts.find(c => c.actionType === 'debtcollector');
+      if (dc && others.length > 0) {
+        const richest = others.reduce((b, p) =>
+          p.bank.reduce((s, c) => s + c.value, 0) > b.bank.reduce((s, c) => s + c.value, 0) ? p : b, others[0]);
+        chosenCard = dc;
+        chosenTarget = { targetPlayerId: richest.id };
+      }
+    }
 
-    const idx = player.hand.findIndex(c => c.id === card!.id);
+    // 4. Sly Deal — steal highest-value property from an incomplete set
+    if (!chosenCard) {
+      const sly = acts.find(c => c.actionType === 'slydeal');
+      if (sly) {
+        let bestOpp: Player | null = null, bestColor: PropertyColor | null = null, bestCardId: string | null = null, bestVal = -1;
+        for (const opp of others) {
+          for (const set of opp.properties.filter(s => !s.isComplete && s.cards.length > 0)) {
+            for (const c of set.cards) {
+              if (c.value > bestVal) { bestVal = c.value; bestOpp = opp; bestColor = set.color; bestCardId = c.id; }
+            }
+          }
+        }
+        if (bestOpp && bestColor && bestCardId) { chosenCard = sly; chosenTarget = { targetPlayerId: bestOpp.id, color: bestColor, cardId: bestCardId }; }
+      }
+    }
+
+    // 5. Best Rent — charge the color that earns most
+    if (!chosenCard && rents.length > 0) {
+      let bestRentCard: Card | null = null, bestRentColor: PropertyColor | null = null, bestRent = 0;
+      for (const rc of rents) {
+        const colors: PropertyColor[] = (rc.rentColors && rc.rentColors.length > 0)
+          ? rc.rentColors.filter(col => (player.properties.find(p => p.color === col)?.cards.length ?? 0) > 0)
+          : player.properties.filter(s => s.cards.length > 0).map(s => s.color);
+        for (const col of colors) {
+          const r = calculateRent(player, col, false);
+          if (r > bestRent) { bestRent = r; bestRentColor = col; bestRentCard = rc; }
+        }
+      }
+      if (bestRentCard && bestRentColor && bestRent > 0) { chosenCard = bestRentCard; chosenTarget = { color: bestRentColor }; }
+    }
+
+    // 6. Properties — prioritize near-complete sets
+    if (!chosenCard && props.length > 0) {
+      const sorted = [...props].sort((a, b) => {
+        const ac = (a.color || a.colors?.[0]) as PropertyColor;
+        const bc = (b.color || b.colors?.[0]) as PropertyColor;
+        const aSet = player.properties.find(p => p.color === ac);
+        const bSet = player.properties.find(p => p.color === bc);
+        const aReq = PROPERTY_SET_REQUIREMENTS[ac] ?? 3;
+        const bReq = PROPERTY_SET_REQUIREMENTS[bc] ?? 3;
+        return ((bSet?.cards.length ?? 0) / bReq) - ((aSet?.cards.length ?? 0) / aReq);
+      });
+      chosenCard = sorted[0];
+      chosenTarget = { color: chosenCard.color || chosenCard.colors?.[0] };
+    }
+
+    // 7. Cash — bank smallest bills first to preserve high-value cards
+    if (!chosenCard && cash.length > 0) {
+      chosenCard = [...cash].sort((a, b) => a.value - b.value)[0];
+    }
+
+    // 8. Discard leftover action cards we can't use
+    if (!chosenCard && acts.length > 0) { chosenCard = acts[0]; }
+
+    if (!chosenCard) break;
+
+    const idx = player.hand.findIndex(c => c.id === chosenCard!.id);
     if (idx === -1) break;
     player.hand.splice(idx, 1);
 
-    if (card.type === 'property' || card.type === 'wild') {
-      const color = targetData?.color || card.color;
+    if (chosenCard.type === 'property' || chosenCard.type === 'wild') {
+      const color = (chosenTarget?.color || chosenCard.color) as PropertyColor | undefined;
       if (color) {
+        chosenCard.color = color;
         const set = player.properties.find(p => p.color === color);
-        if (set) { set.cards.push(card); set.isComplete = checkPropertySetComplete(set); }
+        if (set) { set.cards.push(chosenCard); set.isComplete = checkPropertySetComplete(set); }
       }
-    } else if (card.type === 'cash') {
-      player.bank.push(card);
+    } else if (chosenCard.type === 'cash') {
+      player.bank.push(chosenCard);
+    } else if (chosenCard.type === 'rent') {
+      room.discardPile.push(chosenCard);
+      const rentColor = chosenTarget?.color as PropertyColor | undefined;
+      if (rentColor) {
+        const rent = calculateRent(player, rentColor, false);
+        requestPayments(room, roomId, player, others, rent, 'rent');
+      }
+      played++;
+      if (room.pendingPayments.length > 0) break;
+      continue;
     } else {
-      room.discardPile.push(card);
+      // Action card — delegate to handleActionCard (handles discard + side effects)
+      handleActionCard(room, roomId, player, chosenCard, chosenTarget);
+      played++;
+      if (room.pendingPayments.length > 0 || room.pendingActions.length > 0) break;
+      continue;
     }
 
     played++;
@@ -296,13 +358,11 @@ function processAITurn(room: GameRoom, player: Player): void {
   const winner = checkWinner(room);
   if (winner) {
     room.winner = winner; room.phase = 'ended';
-    const aiRoomId = [...rooms.entries()].find(([, r]) => r === room)?.[0] || '';
-    clearTurnTimer(aiRoomId);
-    io.to(aiRoomId).emit('game-ended', { room, winner });
+    clearTurnTimer(roomId);
+    io.to(roomId).emit('game-ended', { room, winner });
     return;
   }
 
-  const roomId = [...rooms.entries()].find(([, r]) => r === room)?.[0] || '';
   advanceTurn(room, roomId);
 }
 
@@ -344,6 +404,14 @@ function executeDealBreaker(room: GameRoom, action: PendingAction): void {
     mySet.hasHotel = targetSet.hasHotel;
     mySet.isComplete = true;
     targetSet.cards = []; targetSet.hasHouse = false; targetSet.hasHotel = false; targetSet.isComplete = false;
+    if (target.socketId) {
+      io.to(target.socketId).emit('card-taken', {
+        takerName: actor.name,
+        cardName: (action.targetData?.color ?? '') + ' complete set',
+        color: action.targetData?.color,
+        dealType: 'dealbreaker',
+      });
+    }
   }
 }
 
@@ -456,6 +524,14 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
           mySet.hasHotel = targetSet.hasHotel;
           mySet.isComplete = true;
           targetSet.cards = []; targetSet.hasHouse = false; targetSet.hasHotel = false; targetSet.isComplete = false;
+          if (targetPlayer.socketId) {
+            io.to(targetPlayer.socketId).emit('card-taken', {
+              takerName: player.name,
+              cardName: (targetData?.color ?? '') + ' complete set',
+              color: targetData?.color,
+              dealType: 'dealbreaker',
+            });
+          }
         }
       }
       break;
@@ -496,6 +572,8 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
           if (myCI !== -1 && theirCI !== -1) {
             const [myCard] = mySet.cards.splice(myCI, 1);
             const [theirCard] = theirSet.cards.splice(theirCI, 1);
+            theirCard.color = mySet.color as PropertyColor;
+            myCard.color = theirSet.color as PropertyColor;
             mySet.cards.push(theirCard); mySet.isComplete = checkPropertySetComplete(mySet);
             theirSet.cards.push(myCard); theirSet.isComplete = checkPropertySetComplete(theirSet);
             // Notify the victim

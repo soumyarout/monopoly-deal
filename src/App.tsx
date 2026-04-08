@@ -120,10 +120,11 @@ function App() {
     );
   }
 
-  // Resolve creditor name for payment modal
-  const creditorName = pendingPayment
-    ? (room.players.find(p => p.id === pendingPayment.creditorId)?.name ?? 'Opponent')
-    : '';
+  // Resolve creditor info for payment modal
+  const creditorPlayer = pendingPayment
+    ? room.players.find(p => p.id === pendingPayment.creditorId)
+    : undefined;
+  const creditorName = creditorPlayer?.name ?? 'Opponent';
 
   // Resolve actor name for action response modal
   const actionActorName = pendingAction
@@ -177,9 +178,12 @@ function App() {
             </span>
           )}
         </div>
-        <Button onClick={actions.leaveRoom} variant="ghost" size="sm" className="text-gray-400 hover:text-white text-xs px-2">
-          Leave
-        </Button>
+        <div className="flex items-center gap-2">
+          <span className="text-gray-600 text-[10px] tabular-nums hidden sm:inline">v{__APP_VERSION__}</span>
+          <Button onClick={actions.leaveRoom} variant="ghost" size="sm" className="text-gray-400 hover:text-white text-xs px-2">
+            Leave
+          </Button>
+        </div>
       </div>
 
       {/* Game table */}
@@ -227,6 +231,7 @@ function App() {
           payment={pendingPayment}
           myPlayer={myPlayerData}
           creditorName={creditorName}
+          creditorPlayer={creditorPlayer}
           onPay={(bankCardIds, propertyCards) => actions.payAmount(pendingPayment.id, bankCardIds, propertyCards)}
           onJustSayNo={(cardId) => actions.justSayNo(pendingPayment.id, cardId)}
         />
@@ -291,7 +296,9 @@ function App() {
               <div>
                 <p className="font-bold text-sm">Card Taken!</p>
                 <p className="text-amber-100 text-xs">
-                  {cardTakenNotification.dealType === 'slydeal'
+                  {cardTakenNotification.dealType === 'dealbreaker'
+                    ? `${cardTakenNotification.takerName} used Deal Breaker`
+                    : cardTakenNotification.dealType === 'slydeal'
                     ? `${cardTakenNotification.takerName} used Sly Deal`
                     : `${cardTakenNotification.takerName} used Forced Deal`}
                 </p>

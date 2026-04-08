@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import type { Player, Card, PendingPayment, PropertyColor } from '@/types/game';
 import { CardComponent } from '@/components/cards/Card';
-import { getColorDisplayName } from '@/data/cards';
+import { getColorDisplayName, getColorClass } from '@/data/cards';
 import { cn } from '@/lib/utils';
-import { Wallet, Home, AlertTriangle, Ban, Lock } from 'lucide-react';
+import { Wallet, Home, AlertTriangle, Ban, Lock, Eye, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface PaymentModalProps {
   payment: PendingPayment;
   myPlayer: Player;  // debtor (payer)
   creditorName: string;
+  creditorPlayer?: Player; // show their cards for reference
   onPay: (bankCardIds: string[], propertyCards: { color: PropertyColor; cardId: string }[]) => void;
   onJustSayNo: (cardId: string) => void;
 }
@@ -20,9 +21,10 @@ const REASON_LABEL: Record<string, string> = {
   birthday:      "It's My Birthday",
 };
 
-export function PaymentModal({ payment, myPlayer, creditorName, onPay, onJustSayNo }: PaymentModalProps) {
+export function PaymentModal({ payment, myPlayer, creditorName, creditorPlayer, onPay, onJustSayNo }: PaymentModalProps) {
   const [selectedBankIds, setSelectedBankIds]     = useState<Set<string>>(new Set());
   const [selectedProps, setSelectedProps]         = useState<{ color: PropertyColor; cardId: string }[]>([]);
+  const [showCreditor, setShowCreditor]           = useState(false);
 
   const jsnCard = myPlayer.hand.find(c => c.actionType === 'sayno');
 
@@ -101,6 +103,40 @@ export function PaymentModal({ payment, myPlayer, creditorName, onPay, onJustSay
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+          {/* Creditor's cards — collapsible reference view */}
+          {creditorPlayer && (
+            <div className="border border-blue-200 rounded-xl overflow-hidden">
+              <button
+                onClick={() => setShowCreditor(v => !v)}
+                className="w-full flex items-center gap-2 px-3 py-2 bg-blue-50 hover:bg-blue-100 transition-colors text-left"
+              >
+                <Eye className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                <span className="text-xs font-semibold text-blue-700 flex-1">{creditorName}'s cards (view for strategy)</span>
+                {showCreditor ? <ChevronUp className="w-3.5 h-3.5 text-blue-400" /> : <ChevronDown className="w-3.5 h-3.5 text-blue-400" />}
+              </button>
+              {showCreditor && (
+                <div className="p-3 space-y-2 bg-white">
+                  <div className="flex items-center gap-1 text-xs text-gray-500">
+                    <Wallet className="w-3 h-3" />
+                    <span>Bank: <strong>${creditorPlayer.bank.reduce((s, c) => s + c.value, 0)}M</strong></span>
+                  </div>
+                  {creditorPlayer.properties.some(s => s.cards.length > 0) && (
+                    <div className="space-y-1">
+                      {creditorPlayer.properties.filter(s => s.cards.length > 0).map(set => (
+                        <div key={set.color} className="flex flex-wrap gap-1 items-center">
+                          <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded', getColorClass(set.color), set.color === 'yellow' || set.color === 'lightblue' ? 'text-black' : 'text-white')}>
+                            {getColorDisplayName(set.color)}{set.isComplete ? ' ✓' : ''}
+                          </span>
+                          {set.cards.map(c => <CardComponent key={c.id} card={c} size="sm" />)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {!hasAnyCards && (
             <p className="text-center text-gray-500 italic py-4">

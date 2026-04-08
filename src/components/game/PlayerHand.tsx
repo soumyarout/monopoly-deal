@@ -28,12 +28,23 @@ export function PlayerHand({
   isMyTurn, turnPhase, onDrawCards, mustDiscard,
   room, currentPlayerId,
 }: PlayerHandProps) {
-  const [selectedCard, setSelectedCard]     = useState<Card | null>(null);
+  const [selectedCard, setSelectedCard]         = useState<Card | null>(null);
   const [discardSelection, setDiscardSelection] = useState<Card[]>([]);
-  const [dropZoneActive, setDropZoneActive] = useState(false);
+  const [dropZoneActive, setDropZoneActive]     = useState(false);
+  const [endTurnConfirm, setEndTurnConfirm]     = useState(false);
 
   const isDiscardMode = mustDiscard > 0;
   const canPlayCard   = isMyTurn && turnPhase === 'play' && cardsPlayedThisTurn < maxCardsPerTurn && !isDiscardMode;
+
+  function handleEndTurnClick() {
+    if (!endTurnConfirm) {
+      setEndTurnConfirm(true);
+      setTimeout(() => setEndTurnConfirm(false), 3000);
+    } else {
+      setEndTurnConfirm(false);
+      onEndTurn();
+    }
+  }
 
   const me = room.players.find(p => p.id === currentPlayerId);
 
@@ -59,7 +70,7 @@ export function PlayerHand({
       });
       return;
     }
-    if (!isCardPlayable(card)) return;
+    // Always open the modal — playable cards show full actions, others show view-only
     setSelectedCard(card);
   };
 
@@ -102,13 +113,21 @@ export function PlayerHand({
               </span>
             )}
             {turnPhase === 'draw' && !isDiscardMode && (
-              <Button onClick={onDrawCards} size="sm" className="bg-green-500 hover:bg-green-600 text-white">
+              <Button onClick={onDrawCards} size="sm" className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4">
                 Draw Cards
               </Button>
             )}
             {turnPhase === 'play' && !isDiscardMode && (
-              <Button onClick={onEndTurn} variant="outline" className="border-yellow-400 text-yellow-400 hover:bg-yellow-400/10 h-10 px-5 text-sm sm:h-7 sm:px-2 sm:text-xs">
-                End Turn
+              <Button
+                onClick={handleEndTurnClick}
+                className={cn(
+                  'h-10 px-5 text-sm sm:h-7 sm:px-3 sm:text-xs font-bold text-white transition-all',
+                  endTurnConfirm
+                    ? 'bg-red-700 hover:bg-red-800 animate-pulse'
+                    : 'bg-red-600 hover:bg-red-700'
+                )}
+              >
+                {endTurnConfirm ? '⚠ Confirm End Turn?' : 'End Turn'}
               </Button>
             )}
             {isDiscardMode && (
@@ -156,9 +175,9 @@ export function PlayerHand({
               draggable={playable && !isDiscardMode}
               onDragStart={e => { e.dataTransfer.setData('cardId', card.id); e.dataTransfer.effectAllowed = 'move'; }}
               className={cn(
-                'flex-shrink-0 transition-all duration-200',
-                (playable || isDiscardMode) && 'hover:-translate-y-2 cursor-pointer',
-                !playable && !isDiscardMode && 'opacity-50 cursor-not-allowed',
+                'flex-shrink-0 transition-all duration-200 cursor-pointer',
+                (playable || isDiscardMode) && 'hover:-translate-y-2',
+                !playable && !isDiscardMode && 'opacity-50 hover:-translate-y-1',
                 playable && !isDiscardMode && 'sm:cursor-grab sm:active:cursor-grabbing',
                 !isDiscardMode && selectedCard?.id === card.id && 'ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900',
                 isDiscardMode && isDiscardSelected && 'ring-2 ring-red-500 ring-offset-2 ring-offset-red-950 -translate-y-2',
@@ -185,6 +204,7 @@ export function PlayerHand({
           maxCardsPerTurn={maxCardsPerTurn}
           onClose={() => setSelectedCard(null)}
           onPlay={handlePlayCard}
+          isViewOnly={!isCardPlayable(selectedCard)}
         />
       )}
     </div>
@@ -201,11 +221,12 @@ interface CardActionModalProps {
   maxCardsPerTurn: number;
   onClose: () => void;
   onPlay: (targetData?: any) => void;
+  isViewOnly?: boolean;
 }
 
 type ModalStep = 'main' | 'select-player' | 'select-their-property' | 'select-my-property' | 'select-color' | 'select-rent-target';
 
-function CardActionModal({ card, room, currentPlayerId, cardsPlayedThisTurn, maxCardsPerTurn, onClose, onPlay }: CardActionModalProps) {
+function CardActionModal({ card, room, currentPlayerId, cardsPlayedThisTurn, maxCardsPerTurn, onClose, onPlay, isViewOnly = false }: CardActionModalProps) {
   const [step, setStep] = useState<ModalStep>('main');
   const [selectedPlayerId, setSelectedPlayerId]   = useState<string>('');
   const [selectedTheirCardId, setSelectedTheirCardId] = useState<string>('');
@@ -328,38 +349,46 @@ function CardActionModal({ card, room, currentPlayerId, cardsPlayedThisTurn, max
               <div className="flex-shrink-0"><CardComponent card={card} size="md" /></div>
               <div className="flex-1">
                 <p className="text-gray-600 text-sm mb-4">{card.description}</p>
-                {card.type === 'wild' && card.colors && (
-                  <div className="mb-3">
-                    <p className="text-xs font-semibold text-gray-500 mb-1">Place as color:</p>
-                    <div className="flex flex-wrap gap-1">
-                      {(card.colors.length >= 2 && card.colors[0] === card.colors[card.colors.length - 1]
-                        ? (['brown','lightblue','pink','orange','red','yellow','green','blue','black','utility'] as PropertyColor[])
-                        : card.colors
-                      ).map(c => (
-                        <button key={c} onClick={() => { onPlay({ color: c }); onClose(); }}
-                          className={cn('px-3 py-1 rounded-lg text-xs font-bold text-white', getColorClass(c))}>
-                          {getColorDisplayName(c)}
-                        </button>
-                      ))}
-                    </div>
+                {isViewOnly ? (
+                  <div className="bg-gray-100 rounded-xl px-4 py-3 text-center">
+                    <p className="text-gray-500 text-xs font-medium">Not your turn — view only</p>
                   </div>
-                )}
-                {card.type !== 'wild' && (
-                  <div className="flex flex-col gap-2">
-                    <Button onClick={handleMainPlay} className="w-full bg-green-500 hover:bg-green-600 text-white">
-                      <Play className="w-4 h-4 mr-2" />
-                      {needsTarget || isRent ? 'Choose target →' : 'Play Card'}
-                    </Button>
-                    {(card.type === 'action' || card.type === 'rent') && (
-                      <Button
-                        onClick={() => { onPlay({ bankAsCard: true }); onClose(); }}
-                        variant="outline"
-                        className="w-full border-yellow-500 text-yellow-700 hover:bg-yellow-50"
-                      >
-                        Bank as ${card.value}M cash
-                      </Button>
+                ) : (
+                  <>
+                    {card.type === 'wild' && card.colors && (
+                      <div className="mb-3">
+                        <p className="text-xs font-semibold text-gray-500 mb-1">Place as color:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {(card.colors.length >= 2 && card.colors[0] === card.colors[card.colors.length - 1]
+                            ? (['brown','lightblue','pink','orange','red','yellow','green','blue','black','utility'] as PropertyColor[])
+                            : card.colors
+                          ).map(c => (
+                            <button key={c} onClick={() => { onPlay({ color: c }); onClose(); }}
+                              className={cn('px-3 py-1 rounded-lg text-xs font-bold text-white', getColorClass(c))}>
+                              {getColorDisplayName(c)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     )}
-                  </div>
+                    {card.type !== 'wild' && (
+                      <div className="flex flex-col gap-2">
+                        <Button onClick={handleMainPlay} className="w-full bg-green-500 hover:bg-green-600 text-white">
+                          <Play className="w-4 h-4 mr-2" />
+                          {needsTarget || isRent ? 'Choose target →' : 'Play Card'}
+                        </Button>
+                        {(card.type === 'action' || card.type === 'rent') && (
+                          <Button
+                            onClick={() => { onPlay({ bankAsCard: true }); onClose(); }}
+                            variant="outline"
+                            className="w-full border-yellow-500 text-yellow-700 hover:bg-yellow-50"
+                          >
+                            Bank as ${card.value}M cash
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>

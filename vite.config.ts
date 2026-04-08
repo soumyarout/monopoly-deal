@@ -1,13 +1,22 @@
 import path from "path"
+import { readFileSync } from "fs"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 import { inspectAttr } from 'kimi-plugin-inspect-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
+
 // https://vite.dev/config/
 export default defineConfig({
   base: '/',
   publicDir: 'favicon',
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    __BUILD_TIME__: JSON.stringify(
+      new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    ),
+  },
   plugins: [
     inspectAttr(),
     react(),

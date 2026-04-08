@@ -250,9 +250,45 @@ function ActionCard({ card, size }: { card: CardType; size: string }) {
   );
 }
 
+const ALL_COLORS: PropertyColor[] = ['brown','lightblue','pink','orange','red','yellow','green','blue','black','utility'];
+
 function RentCard({ card, size }: { card: CardType; size: string }) {
   const icon = actionIcons.rent;
-  const rentColors = card.rentColors || ['brown', 'lightblue'];
+  const isWildRent = !card.rentColors || card.rentColors.length === 0;
+  const rentColors = isWildRent ? ALL_COLORS : card.rentColors!;
+
+  if (isWildRent) {
+    return (
+      <>
+        {/* Wild Rent header */}
+        <div className="w-full px-1 py-0.5 bg-gradient-to-r from-purple-600 to-purple-800 text-white font-bold text-center text-[9px]">
+          WILD RENT
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 flex flex-col items-center justify-center p-1 bg-purple-50">
+          <div className={cn('mb-0.5', size === 'sm' ? 'text-xl' : size === 'md' ? 'text-2xl' : 'text-3xl')}>
+            {icon}
+          </div>
+          {/* All 10 color dots in 2 rows */}
+          <div className="flex flex-wrap justify-center gap-0.5 mb-0.5" style={{ maxWidth: '60px' }}>
+            {ALL_COLORS.map((color) => (
+              <div key={color} className={cn('w-3 h-3 rounded-full border border-white shadow-sm', getColorClass(color))} />
+            ))}
+          </div>
+          {size !== 'sm' && (
+            <div className="text-[7px] text-purple-700 font-bold text-center leading-tight">ANY COLOR</div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="w-full bg-purple-100 px-1 py-0.5 flex items-center justify-between border-t border-purple-200">
+          <span className="font-bold text-purple-800">${card.value}M</span>
+          <span className="text-[8px] text-purple-600 font-bold">WILD</span>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>

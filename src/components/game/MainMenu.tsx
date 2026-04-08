@@ -158,6 +158,9 @@ export function MainMenu({ onCreateRoom, onJoinRoom, onWatchRoom, connected = tr
                 <Gamepad2 className="w-4 h-4" /> Real-time
               </span>
             </div>
+            <p className="text-center text-[10px] text-gray-400 mt-3">
+              v{__APP_VERSION__} · {__BUILD_TIME__}
+            </p>
           </div>
         </div>
       </div>
