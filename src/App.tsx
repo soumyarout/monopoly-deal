@@ -175,9 +175,11 @@ function App() {
   // Resolve actor name for action response modal.
   // When jsnCount is odd, this player is the Deal Breaker actor receiving a counter-JSN —
   // so the "other person" label should be the responder, not themselves.
+  // When counter (jsnCount odd) the modal is shown to the actor — show the victim's name (targetId).
+  // When initial request (jsnCount even) the modal is shown to the victim — show the actor's name (actorId).
   const pendingActionIsCounter = pendingAction && pendingAction.jsnCount > 0 && pendingAction.jsnCount % 2 === 1;
   const actionActorName = pendingAction
-    ? (room.players.find(p => p.id === (pendingActionIsCounter ? pendingAction.responderId : pendingAction.actorId))?.name ?? 'Opponent')
+    ? (room.players.find(p => p.id === (pendingActionIsCounter ? pendingAction.targetId : pendingAction.actorId))?.name ?? 'Opponent')
     : '';
 
   return (

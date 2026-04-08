@@ -1102,14 +1102,28 @@ io.on('connection', (socket) => {
     if (t) { clearTimeout(t); jsnCounterTimers.delete(paymentId); }
 
     if (response === 'accept') {
-      // JSN stands — cancel payment
-      const debtorId = payment.jsnState.jsnCount % 2 === 1 ? payment.debtorId : payment.creditorId;
-      room.pendingPayments = room.pendingPayments.filter(p => p.id !== paymentId);
-      io.to(roomId).emit('just-say-no-played', { room, debtorId, paymentId });
-      if (room.pendingPayments.length === 0) {
-        io.to(roomId).emit('all-payments-done', { room });
-        const activePlayer = room.players[room.currentPlayerIndex];
-        if (activePlayer?.isAI) advanceTurn(room, roomId);
+      const jsnCount = payment.jsnState.jsnCount;
+      if (jsnCount % 2 === 0) {
+        // Even: creditor's counter-JSN wins → reinstate payment
+        delete payment.jsnState;
+        const debtorPlayer = room.players.find(x => x.id === payment.debtorId);
+        if (debtorPlayer?.socketId) {
+          io.to(debtorPlayer.socketId).emit('payment-request', {
+            paymentId: payment.id, creditorId: payment.creditorId,
+            creditorName: room.players.find(x => x.id === payment.creditorId)?.name ?? '',
+            amount: payment.amount, reason: payment.reason, room,
+          });
+        }
+        io.to(roomId).emit('room-updated', { room });
+      } else {
+        // Odd: debtor's JSN wins → cancel payment
+        room.pendingPayments = room.pendingPayments.filter(p => p.id !== paymentId);
+        io.to(roomId).emit('just-say-no-played', { room, debtorId: payment.debtorId, paymentId });
+        if (room.pendingPayments.length === 0) {
+          io.to(roomId).emit('all-payments-done', { room });
+          const activePlayer = room.players[room.currentPlayerIndex];
+          if (activePlayer?.isAI) advanceTurn(room, roomId);
+        }
       }
       return;
     }
@@ -1211,6 +1225,15 @@ io.on('connection', (socket) => {
     if (!responder || responder.socketId !== socket.id) return;
 
     if (response === 'accept') {
+      // If Deal Breaker is currently "cancelled" (odd jsnCount), notify the victim their JSN worked
+      if (action.jsnCount > 0 && action.jsnCount % 2 === 1) {
+        const victim = room.players.find(p => p.id === action.targetId);
+        if (victim?.socketId) {
+          io.to(victim.socketId).emit('jsn-notification', {
+            message: `${responder.name} accepted your Just Say No — your ${action.targetData?.color ?? ''} set is safe!`,
+          });
+        }
+      }
       resolveAction(room, roomId, action);
       return;
     }
@@ -1255,16 +1278,21 @@ io.on('connection', (socket) => {
       }, 15000);
       actionTimers.set(actionId, timer);
     } else {
-      // No counter possible — notify the party whose action is being cancelled
+      // No counter possible
       if (action.jsnCount % 2 === 1) {
-        // Odd = Deal Breaker cancelled → tell actor
+        // Odd = Deal Breaker cancelled — notify actor and the responder (victim)
         const actorPlayer = room.players.find(p => p.id === action.actorId);
         if (actorPlayer?.socketId) {
           io.to(actorPlayer.socketId).emit('jsn-notification', {
             message: `${responder.name} cancelled your Deal Breaker with Just Say No!`,
           });
         }
+        // Tell the responder their JSN worked
+        io.to(responder.socketId).emit('jsn-notification', {
+          message: 'Your Just Say No cancelled the Deal Breaker!',
+        });
       }
+      // Even: Deal Breaker executes via resolveAction — victim gets card-taken notification
       resolveAction(room, roomId, action);
     }
   });

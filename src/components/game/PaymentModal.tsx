@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Player, Card, PendingPayment, PropertyColor } from '@/types/game';
+import type { Player, Card, PendingPayment, PropertyColor, PropertySet } from '@/types/game';
 import { CardComponent } from '@/components/cards/Card';
 import { getColorDisplayName, getColorClass } from '@/data/cards';
 import { cn } from '@/lib/utils';
@@ -21,24 +21,46 @@ const REASON_LABEL: Record<string, string> = {
   birthday:      "It's My Birthday",
 };
 
-/** Greedily select smallest bank cards that cover the debt (cash-first, no change). */
-function autoSelectBank(bank: Card[], amount: number): Set<string> {
-  const sorted = [...bank].sort((a, b) => a.value - b.value);
-  const sel = new Set<string>();
+/** Greedily auto-select cash-first, then properties, to cover the debt. */
+function autoSelectPayment(
+  bank: Card[],
+  properties: PropertySet[],
+  amount: number,
+): { bankIds: Set<string>; propCards: { color: PropertyColor; cardId: string }[] } {
+  const bankIds = new Set<string>();
   let total = 0;
-  for (const card of sorted) {
+
+  // Bank first (ascending value)
+  for (const card of [...bank].sort((a, b) => a.value - b.value)) {
     if (total >= amount) break;
-    sel.add(card.id);
+    bankIds.add(card.id);
     total += card.value;
   }
-  return sel;
+
+  // Properties second (incomplete sets only, ascending value)
+  const propCards: { color: PropertyColor; cardId: string }[] = [];
+  if (total < amount) {
+    const propPool = properties
+      .filter(s => !s.isComplete && s.cards.length > 0)
+      .flatMap(s => s.cards.map(c => ({ color: s.color as PropertyColor, cardId: c.id, value: c.value })))
+      .sort((a, b) => a.value - b.value);
+    for (const p of propPool) {
+      if (total >= amount) break;
+      propCards.push({ color: p.color, cardId: p.cardId });
+      total += p.value;
+    }
+  }
+
+  return { bankIds, propCards };
 }
 
 export function PaymentModal({ payment, myPlayer, creditorName, creditorPlayer, onPay, onJustSayNo }: PaymentModalProps) {
   const [selectedBankIds, setSelectedBankIds]     = useState<Set<string>>(
-    () => autoSelectBank(myPlayer.bank, payment.amount)
+    () => autoSelectPayment(myPlayer.bank, myPlayer.properties, payment.amount).bankIds
   );
-  const [selectedProps, setSelectedProps]         = useState<{ color: PropertyColor; cardId: string }[]>([]);
+  const [selectedProps, setSelectedProps]         = useState<{ color: PropertyColor; cardId: string }[]>(
+    () => autoSelectPayment(myPlayer.bank, myPlayer.properties, payment.amount).propCards
+  );
   const [showCreditor, setShowCreditor]           = useState(false);
 
   const jsnCard = myPlayer.hand.find(c => c.actionType === 'sayno');
