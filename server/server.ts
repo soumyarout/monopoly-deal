@@ -572,15 +572,19 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
           if (myCI !== -1 && theirCI !== -1) {
             const [myCard] = mySet.cards.splice(myCI, 1);
             const [theirCard] = theirSet.cards.splice(theirCI, 1);
-            theirCard.color = mySet.color as PropertyColor;
-            myCard.color = theirSet.color as PropertyColor;
-            mySet.cards.push(theirCard); mySet.isComplete = checkPropertySetComplete(mySet);
-            theirSet.cards.push(myCard); theirSet.isComplete = checkPropertySetComplete(theirSet);
+            // Update completion of the source sets now that cards are removed
+            mySet.isComplete = checkPropertySetComplete(mySet);
+            theirSet.isComplete = checkPropertySetComplete(theirSet);
+            // Each card moves to the destination set matching ITS OWN color identity
+            const myCardDest = targetPlayer.properties.find(p => p.color === myCard.color);
+            if (myCardDest) { myCardDest.cards.push(myCard); myCardDest.isComplete = checkPropertySetComplete(myCardDest); }
+            const theirCardDest = player.properties.find(p => p.color === theirCard.color);
+            if (theirCardDest) { theirCardDest.cards.push(theirCard); theirCardDest.isComplete = checkPropertySetComplete(theirCardDest); }
             // Notify the victim
             if (targetPlayer.socketId) {
               io.to(targetPlayer.socketId).emit('card-taken', {
                 takerName: player.name, cardName: theirCard.name,
-                color: targetData?.theirColor, dealType: 'forceddeal',
+                color: theirCard.color, dealType: 'forceddeal',
               });
             }
           }
@@ -591,16 +595,23 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
 
     case 'house': {
       if (targetData?.color) {
-        const set = player.properties.find(p => p.color === targetData.color);
-        if (set?.isComplete && !set.hasHouse) set.hasHouse = true;
+        const color = targetData.color as PropertyColor;
+        // Railroads (black) and Utilities cannot have Houses/Hotels (spec §8.2)
+        if (color !== 'black' && color !== 'utility') {
+          const set = player.properties.find(p => p.color === color);
+          if (set?.isComplete && !set.hasHouse) set.hasHouse = true;
+        }
       }
       break;
     }
 
     case 'hotel': {
       if (targetData?.color) {
-        const set = player.properties.find(p => p.color === targetData.color);
-        if (set?.isComplete && set.hasHouse && !set.hasHotel) set.hasHotel = true;
+        const color = targetData.color as PropertyColor;
+        if (color !== 'black' && color !== 'utility') {
+          const set = player.properties.find(p => p.color === color);
+          if (set?.isComplete && set.hasHouse && !set.hasHotel) set.hasHotel = true;
+        }
       }
       break;
     }

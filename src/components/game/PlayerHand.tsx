@@ -521,8 +521,11 @@ function CardActionModal({ card, room, currentPlayerId, cardsPlayedThisTurn, max
 
               <div className="space-y-2">
                 {(isRent ? availableRentColors : me?.properties.filter(s =>
-                    card.actionType === 'house' ? (s.isComplete && !s.hasHouse)
-                    : (s.isComplete && s.hasHouse && !s.hasHotel)
+                    // Railroads (black) and Utilities cannot receive Houses or Hotels (spec §8.2)
+                    s.color !== 'black' && s.color !== 'utility' && (
+                      card.actionType === 'house' ? (s.isComplete && !s.hasHouse)
+                      : (s.isComplete && s.hasHouse && !s.hasHotel)
+                    )
                   ).map(s => s.color) ?? []
                 ).map(color => {
                   const set = me?.properties.find(p => p.color === color);

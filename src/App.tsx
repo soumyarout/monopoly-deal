@@ -5,8 +5,9 @@ import { GameTable } from '@/components/game/GameTable';
 import { PlayerHand } from '@/components/game/PlayerHand';
 import { PaymentModal } from '@/components/game/PaymentModal';
 import { ActionResponseModal } from '@/components/game/ActionResponseModal';
+import { RulesModal } from '@/components/game/RulesModal';
 import { Button } from '@/components/ui/button';
-import { Trophy, ArrowLeft, AlertCircle, Ban, Eye, PackageOpen } from 'lucide-react';
+import { Trophy, ArrowLeft, AlertCircle, Ban, Eye, PackageOpen, BookOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useEffect, useRef } from 'react';
 
@@ -14,6 +15,7 @@ function App() {
   const [state, actions] = useSocket();
   const { room, currentPlayer, error, mustDiscard, pendingPayment, pendingAction, pendingJsnCounter, isSpectator, cardTakenNotification } = state;
   const [showError, setShowError] = useState(false);
+  const [showRules, setShowRules] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -180,6 +182,9 @@ function App() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-gray-600 text-[10px] tabular-nums hidden sm:inline">v{__APP_VERSION__}</span>
+          <Button onClick={() => setShowRules(true)} variant="ghost" size="sm" className="text-gray-400 hover:text-white text-xs px-2">
+            <BookOpen className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline">Rules</span>
+          </Button>
           <Button onClick={actions.leaveRoom} variant="ghost" size="sm" className="text-gray-400 hover:text-white text-xs px-2">
             Leave
           </Button>
@@ -318,6 +323,9 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Rules reference modal */}
+      {showRules && <RulesModal onClose={() => setShowRules(false)} />}
 
       {/* Error toast */}
       {showError && error && (
