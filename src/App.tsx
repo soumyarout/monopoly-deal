@@ -257,6 +257,8 @@ function App() {
           version={room.version}
           isMyTurn={isMyTurn && !isSpectator}
           onMoveWildcard={actions.moveWildcard}
+          discardPile={room.discardPile}
+          deckCount={room.deck.length}
         />
       </div>
 

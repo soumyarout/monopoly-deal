@@ -26,6 +26,8 @@ interface GameTableProps {
   version: GameVersion;
   isMyTurn: boolean;
   onMoveWildcard: (cardId: string, fromColor: PropertyColor, toColor: PropertyColor) => void;
+  discardPile: Card[];
+  deckCount: number;
 }
 
 const CAR_LOGOS = ['🚗', '🏎️', '🚙', '🚐', '🚕'];
@@ -37,7 +39,7 @@ const CAR_COLORS = [
   'from-purple-500 to-purple-600',
 ];
 
-export function GameTable({ players, currentPlayerId, activePlayerId, version, isMyTurn, onMoveWildcard }: GameTableProps) {
+export function GameTable({ players, currentPlayerId, activePlayerId, version, isMyTurn, onMoveWildcard, discardPile, deckCount }: GameTableProps) {
   const opponents = players.filter(p => p.id !== currentPlayerId);
   const mePlayer = players.find(p => p.id === currentPlayerId);
   const getPlayerIndex = (id: string) => players.findIndex(p => p.id === id);
@@ -106,19 +108,27 @@ export function GameTable({ players, currentPlayerId, activePlayerId, version, i
         />
       )}
 
-      {/* Center: Deck + Discard */}
-      <div className="flex items-center justify-center gap-6 py-2 border-b border-white/10 flex-shrink-0">
-        <div className="flex flex-col items-center gap-0.5">
-          <div className="w-9 h-12 bg-gradient-to-br from-red-600 to-red-800 rounded-lg flex items-center justify-center shadow-lg border border-yellow-400/40">
-            <span className="text-yellow-400 text-base font-black">M</span>
+      {/* Center: Deck (left) + Discard pile */}
+      <div className="flex items-center gap-4 px-3 py-2 border-b border-white/10 flex-shrink-0">
+        {/* Deck — M card with count badge */}
+        <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+          <div className="relative">
+            <div className="w-9 h-12 bg-gradient-to-br from-red-600 to-red-800 rounded-lg flex items-center justify-center shadow-lg border border-yellow-400/40">
+              <span className="text-yellow-400 text-base font-black">M</span>
+            </div>
+            <span className="absolute -top-1.5 -right-1.5 bg-red-900 text-yellow-300 text-[8px] font-bold rounded-full w-4 h-4 flex items-center justify-center border border-yellow-400/40 leading-none">
+              {deckCount}
+            </span>
           </div>
           <span className="text-white/40 text-[9px]">DECK</span>
         </div>
+
+        {/* Discard pile with animated stack */}
         <div className="flex flex-col items-center gap-0.5">
-          <div className="w-9 h-12 rounded-lg border-2 border-dashed border-white/20 flex items-center justify-center">
-            <span className="text-white/20 text-[8px]">DISC</span>
-          </div>
-          <span className="text-white/40 text-[9px]">DISCARD</span>
+          <DiscardPileDisplay discardPile={discardPile} />
+          <span className="text-white/40 text-[9px]">
+            DISCARD{discardPile.length > 0 ? ` (${discardPile.length})` : ''}
+          </span>
         </div>
       </div>
 
@@ -590,6 +600,43 @@ function PropertyInfoModal({ propertySet, version, onClose }: PropertyInfoModalP
               <span className={cn('font-bold', propertySet.hasHotel ? 'text-purple-700' : 'text-gray-400')}>+$4M</span>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Discard pile animated stack ─── */
+function DiscardPileDisplay({ discardPile }: { discardPile: Card[] }) {
+  if (discardPile.length === 0) {
+    return (
+      <div className="w-9 h-12 rounded-lg border-2 border-dashed border-white/20 flex items-center justify-center">
+        <span className="text-white/20 text-[8px]">empty</span>
+      </div>
+    );
+  }
+
+  const top = discardPile[discardPile.length - 1];
+  const stackSize = Math.min(discardPile.length - 1, 2);
+  const rotations = [-7, 6];
+
+  return (
+    /* outer wrapper: fixed size, gentle sway */
+    <div style={{ position: 'relative', width: 36, height: 50, animation: 'discardSway 5s ease-in-out infinite' }}>
+      {/* card backs stacked behind */}
+      {Array.from({ length: stackSize }).map((_, i) => (
+        <div
+          key={i}
+          className="absolute inset-0 bg-gradient-to-br from-red-600 to-red-800 rounded-lg border border-yellow-400/30 shadow flex items-center justify-center"
+          style={{ transform: `rotate(${rotations[i]}deg)` }}
+        >
+          <span className="text-yellow-400 text-sm font-black">M</span>
+        </div>
+      ))}
+      {/* top card face-up, scaled to fit */}
+      <div className="absolute inset-0 rounded-lg overflow-hidden shadow-lg">
+        <div style={{ transform: 'scale(0.5)', transformOrigin: 'top left', width: 64, height: 96, pointerEvents: 'none' }}>
+          <CardComponent card={top} size="sm" />
         </div>
       </div>
     </div>

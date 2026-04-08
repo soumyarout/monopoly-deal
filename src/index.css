@@ -102,6 +102,12 @@ body {
   flex-direction: column;
 }
 
+/* Discard pile gentle sway */
+@keyframes discardSway {
+  0%, 100% { transform: rotate(-1.5deg); }
+  50%       { transform: rotate(1.5deg); }
+}
+
 /* Safe-area padding for notched phones (iPhone X/Dynamic Island).
    Applied to the outermost shell; inner components inherit via env(). */
 .safe-top    { padding-top:    env(safe-area-inset-top, 0px); }
