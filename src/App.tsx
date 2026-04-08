@@ -22,6 +22,7 @@ function App() {
   const prevIsMyTurnRef = useRef(false);
   const prevPhasRef = useRef<string | null>(null);
   const prevPendingPayRef = useRef(false);
+  const prevCardsPlayedRef = useRef(0);
 
   // Active game state — computed early so useEffects below can reference them
   const activePlayer  = room?.players[room.currentPlayerIndex];
@@ -91,6 +92,13 @@ function App() {
     if (pendingPayment && !prevPendingPayRef.current) sounds.paymentDue();
     prevPendingPayRef.current = !!pendingPayment;
   }, [pendingPayment]);
+
+  // Sound: card played (fires whenever cardsPlayedThisTurn increments)
+  useEffect(() => {
+    const count = myPlayerData?.cardsPlayedThisTurn ?? 0;
+    if (count > prevCardsPlayedRef.current) sounds.cardPlayed();
+    prevCardsPlayedRef.current = count;
+  }, [myPlayerData?.cardsPlayedThisTurn]);
 
   // Sound: game ended
   useEffect(() => {

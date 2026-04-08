@@ -1,28 +1,49 @@
-// Web Audio API sound effects — no external files, works on iOS PWA after first user gesture
+// Web Audio API sound effects — no external files, works on iOS PWA
+//
+// iOS RULES:
+//  1. AudioContext must be created inside a user-gesture handler
+//  2. A real buffer must be played during that same gesture to fully unlock
+//  3. After unlock, sounds can fire at any time
+//
+// We attach unlock to touchstart, touchend, click, mousedown, keydown so the
+// very first interaction (e.g. the "Create Room" button) unlocks audio.
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const AudioCtx: typeof AudioContext = window.AudioContext || (window as any).webkitAudioContext;
 
 let _ctx: AudioContext | null = null;
+let _unlocked = false;
 
-function ctx(): AudioContext | null {
-  if (typeof window === 'undefined') return null;
-  if (!_ctx) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      _ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    } catch { return null; }
-  }
+function unlock() {
+  if (_unlocked || typeof window === 'undefined') return;
+  try {
+    _ctx = _ctx ?? new AudioCtx();
+    // Play a 1-sample silent buffer — this is what actually unlocks iOS audio
+    const buf = _ctx.createBuffer(1, 1, 22050);
+    const src = _ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(_ctx.destination);
+    src.start(0);
+    _ctx.resume().then(() => { _unlocked = true; }).catch(() => { _unlocked = true; });
+    _unlocked = true;
+  } catch { /* ignore */ }
+}
+
+// Attach to every plausible first-interaction event
+if (typeof document !== 'undefined') {
+  (['touchstart', 'touchend', 'click', 'mousedown', 'keydown'] as const).forEach(evt => {
+    document.addEventListener(evt, unlock, { once: true, passive: true });
+  });
+}
+
+function getCtx(): AudioContext | null {
+  if (!_ctx) return null;
   if (_ctx.state === 'suspended') _ctx.resume().catch(() => {});
   return _ctx;
 }
 
-// Unlock on first touch/click — required for iOS PWA
-if (typeof document !== 'undefined') {
-  const unlock = () => ctx();
-  document.addEventListener('touchstart', unlock, { once: true, passive: true });
-  document.addEventListener('click', unlock, { once: true });
-}
-
-function tone(freq: number, dur: number, type: OscillatorType = 'sine', vol = 0.22, delay = 0): void {
-  const c = ctx();
+function tone(freq: number, dur: number, type: OscillatorType = 'sine', vol = 0.35, delay = 0): void {
+  const c = getCtx();
   if (!c) return;
   try {
     const osc = c.createOscillator();
@@ -40,28 +61,42 @@ function tone(freq: number, dur: number, type: OscillatorType = 'sine', vol = 0.
 }
 
 export const sounds = {
-  /** Short click when a card is played */
-  cardPlayed:  () => tone(600, 0.07, 'square', 0.12),
+  /** Short pop when you play a card */
+  cardPlayed:  () => tone(700, 0.08, 'square', 0.20),
   /** Softer click for banking cash */
-  bankCard:    () => tone(420, 0.09, 'sine', 0.12),
+  bankCard:    () => tone(450, 0.10, 'sine', 0.18),
   /** Ascending chime — your turn starts */
   yourTurn:    () => {
-    tone(523, 0.13);
-    tone(659, 0.13, 'sine', 0.22, 0.14);
-    tone(784, 0.20, 'sine', 0.22, 0.29);
+    tone(523, 0.15, 'sine', 0.35);
+    tone(659, 0.15, 'sine', 0.35, 0.16);
+    tone(784, 0.25, 'sine', 0.35, 0.33);
   },
-  /** Single tick for timer countdown (≤10 s) */
-  timerTick:   () => tone(880, 0.04, 'square', 0.08),
+  /** Single tick for timer countdown ≤10 s */
+  timerTick:   () => tone(880, 0.05, 'square', 0.15),
   /** Faster double-tick for timer ≤5 s */
-  timerUrgent: () => { tone(1100, 0.06, 'square', 0.18); tone(1100, 0.06, 'square', 0.18, 0.1); },
-  /** Low buzz — Just Say No played */
-  jsnPlayed:   () => { tone(220, 0.22, 'sawtooth', 0.18); tone(160, 0.22, 'sawtooth', 0.15, 0.14); },
+  timerUrgent: () => {
+    tone(1100, 0.07, 'square', 0.28);
+    tone(1100, 0.07, 'square', 0.28, 0.12);
+  },
+  /** Low buzz — Just Say No played / cancelled */
+  jsnPlayed:   () => {
+    tone(220, 0.25, 'sawtooth', 0.28);
+    tone(160, 0.25, 'sawtooth', 0.22, 0.16);
+  },
   /** Descending alert — payment is due */
-  paymentDue:  () => { tone(350, 0.12, 'sine', 0.18); tone(270, 0.22, 'sine', 0.18, 0.14); },
+  paymentDue:  () => {
+    tone(440, 0.14, 'sine', 0.30);
+    tone(330, 0.25, 'sine', 0.28, 0.16);
+  },
   /** Drop — a card was stolen from you */
-  cardTaken:   () => { tone(330, 0.10, 'sine', 0.15); tone(200, 0.22, 'sine', 0.15, 0.11); },
+  cardTaken:   () => {
+    tone(400, 0.12, 'sine', 0.25);
+    tone(230, 0.28, 'sine', 0.25, 0.13);
+  },
   /** Victory fanfare */
-  winner:      () => [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.22, 'sine', 0.28, i * 0.13)),
+  winner: () =>
+    [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.28, 'sine', 0.40, i * 0.14)),
   /** Defeat sound */
-  gameOver:    () => [330, 270, 210].forEach((f, i) => tone(f, 0.30, 'sine', 0.22, i * 0.22)),
+  gameOver: () =>
+    [330, 270, 210].forEach((f, i) => tone(f, 0.35, 'sine', 0.32, i * 0.24)),
 };
