@@ -512,9 +512,9 @@ function CardActionModal({ card, room, currentPlayerId, cardsPlayedThisTurn, max
                   <div className="flex-1 min-w-0">
                     <p className={cn('text-sm font-bold', canDoubleRent ? 'text-gray-800' : 'text-gray-400')}>
                       Double the Rent!
-                      {!canDoubleRent && <span className="font-normal text-xs text-gray-400 ml-1">(need 2 plays remaining)</span>}
+                      {!canDoubleRent && <span className="font-normal text-xs text-gray-400 ml-1">(need at least 1 play remaining)</span>}
                     </p>
-                    <p className="text-xs text-gray-500">Uses 1 extra play · charges ×2 rent</p>
+                    <p className="text-xs text-gray-500">Free modifier (no extra play) · charges ×2 rent</p>
                   </div>
                 </div>
               )}

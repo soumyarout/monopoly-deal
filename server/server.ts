@@ -1,7 +1,7 @@
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
-import type { GameRoom, Player, Card, PropertySet, GameVersion, PendingPayment, PendingAction, Spectator, PropertyColor } from '../src/types/game';
+import type { GameRoom, Player, Card, PropertySet, GameVersion, PendingPayment, PendingAction, Spectator, PropertyColor, AISkillLevel } from '../src/types/game';
 import { PROPERTY_SET_REQUIREMENTS, PROPERTY_SET_RENT } from '../src/types/game';
 import { generateDeck, shuffleDeck } from '../src/data/cards.js';
 import express from 'express';
@@ -77,7 +77,7 @@ function startTurnTimer(roomId: string, room: GameRoom) {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function createPlayer(name: string, socketId: string, isHost: boolean, isAI = false, persistentPlayerId?: string): Player {
+function createPlayer(name: string, socketId: string, isHost: boolean, isAI = false, persistentPlayerId?: string, aiSkill?: AISkillLevel): Player {
   return {
     id: uuidv4(),
     name,
@@ -85,6 +85,7 @@ function createPlayer(name: string, socketId: string, isHost: boolean, isAI = fa
     persistentPlayerId: persistentPlayerId ?? uuidv4(),
     hand: [], bank: [], properties: [],
     isHost, isReady: true, isAI,
+    aiSkill,
     cardsPlayedThisTurn: 0,
     hadZeroCardsAtEnd: false,
   };
@@ -163,7 +164,7 @@ function requestPayments(
   }
 }
 
-/** Auto-pay debt for AI: bank first (smallest), then properties. */
+/** Auto-pay debt for AI: bank first (smallest), then incomplete properties only — complete sets are protected. */
 function aiPay(_room: GameRoom, debtor: Player, creditor: Player, amount: number): void {
   let remaining = amount;
   const bankSorted = [...debtor.bank].sort((a, b) => a.value - b.value);
@@ -173,10 +174,11 @@ function aiPay(_room: GameRoom, debtor: Player, creditor: Player, amount: number
     if (idx !== -1) { debtor.bank.splice(idx, 1); creditor.bank.push(card); remaining -= card.value; }
   }
   if (remaining > 0) {
-    for (const set of debtor.properties) {
+    // Only pay from incomplete sets — complete sets are protected (same rule as human payment)
+    for (const set of debtor.properties.filter(s => !s.isComplete && s.cards.length > 0)) {
       while (set.cards.length > 0 && remaining > 0) {
         const card = set.cards.pop()!;
-        set.isComplete = false;
+        set.isComplete = checkPropertySetComplete(set);
         const cs = creditor.properties.find(p => p.color === set.color);
         if (cs) { cs.cards.push(card); cs.isComplete = checkPropertySetComplete(cs); }
         remaining -= card.value;
@@ -273,17 +275,162 @@ function aiBestColorForWild(player: Player, card: Card): PropertyColor {
 
 // ─── AI Turn ─────────────────────────────────────────────────────────────────
 
+/**
+ * Beginner AI: plays all card types but makes poor strategic decisions.
+ * - Wildcards/properties placed at a random valid color (not optimised for set completion)
+ * - Rent charged for a random available color (not the highest-value one)
+ * - Sly Deal steals a random card from a random opponent (not the most useful one)
+ * - Forced Deal swaps randomly (doesn't check value or completion impact)
+ * - Deal Breaker targets a random complete set (not the most damaging one)
+ * - Debt Collector targets a random opponent (not the richest)
+ * - Passgo played immediately without evaluating hand size
+ * - Never uses Double Rent
+ */
+function processBeginnerAITurn(room: GameRoom, roomId: string, player: Player): void {
+  const others = room.players.filter(p => p.id !== player.id);
+
+  // Shuffle hand for random play order (excluding sayno/doublerent — those are situational)
+  const available = [...player.hand]
+    .filter(c => c.actionType !== 'sayno' && c.actionType !== 'doublerent')
+    .sort(() => Math.random() - 0.5);
+
+  let played = 0;
+  for (const card of available) {
+    if (played >= 3) break;
+    const idx = player.hand.findIndex(c => c.id === card.id);
+    if (idx === -1) continue;
+    player.hand.splice(idx, 1);
+
+    if (card.type === 'property' || card.type === 'wild') {
+      // Pick a random valid color instead of the strategically best one
+      const validColors = card.colors?.length
+        ? [...new Set(card.colors)] as PropertyColor[]
+        : [card.color as PropertyColor];
+      const color = validColors[Math.floor(Math.random() * validColors.length)];
+      if (color) {
+        card.color = color;
+        const set = player.properties.find(p => p.color === color);
+        if (set) { set.cards.push(card); set.isComplete = checkPropertySetComplete(set); }
+      }
+    } else if (card.type === 'cash') {
+      player.bank.push(card);
+    } else if (card.type === 'rent') {
+      room.discardPile.push(card);
+      const validColors = (card.rentColors?.length
+        ? card.rentColors.filter(c => (player.properties.find(p => p.color === c)?.cards.length ?? 0) > 0)
+        : player.properties.filter(s => s.cards.length > 0).map(s => s.color)) as PropertyColor[];
+      if (validColors.length > 0) {
+        // Pick a random color instead of the highest-rent one
+        const color = validColors[Math.floor(Math.random() * validColors.length)];
+        const rent = calculateRent(player, color, false);
+        if (rent > 0) requestPayments(room, roomId, player, others, rent, 'rent');
+      }
+      played++;
+      if (room.pendingPayments.length > 0) break;
+      continue;
+    } else if (card.type === 'action') {
+      let targetData: Record<string, unknown> | null = null;
+
+      if (card.actionType === 'passgo') {
+        // Always play passgo (no hand-size check)
+        targetData = null;
+      } else if (card.actionType === 'birthday') {
+        targetData = null;
+      } else if (card.actionType === 'debtcollector') {
+        // Random target, not richest
+        const target = others[Math.floor(Math.random() * others.length)];
+        targetData = target ? { targetPlayerId: target.id } : null;
+      } else if (card.actionType === 'dealbreaker') {
+        // Pick a random complete set from a random opponent
+        const oppsWithSets = others.filter(o => o.properties.some(s => s.isComplete));
+        const opp = oppsWithSets[Math.floor(Math.random() * oppsWithSets.length)];
+        if (opp) {
+          const completeSets = opp.properties.filter(s => s.isComplete);
+          const set = completeSets[Math.floor(Math.random() * completeSets.length)];
+          targetData = set ? { targetPlayerId: opp.id, color: set.color } : null;
+        }
+      } else if (card.actionType === 'slydeal') {
+        // Steal a random card from a random opponent's incomplete set
+        const oppsWithProps = others.filter(o => o.properties.some(s => !s.isComplete && s.cards.length > 0));
+        const opp = oppsWithProps[Math.floor(Math.random() * oppsWithProps.length)];
+        if (opp) {
+          const incompSets = opp.properties.filter(s => !s.isComplete && s.cards.length > 0);
+          const set = incompSets[Math.floor(Math.random() * incompSets.length)];
+          if (set) {
+            const c = set.cards[Math.floor(Math.random() * set.cards.length)];
+            targetData = { targetPlayerId: opp.id, color: set.color, cardId: c.id };
+          }
+        }
+      } else if (card.actionType === 'forceddeal') {
+        // Random swap: pick a random card from any opponent's incomplete set, give a random card of ours
+        const oppsWithProps = others.filter(o => o.properties.some(s => !s.isComplete && s.cards.length > 0));
+        const opp = oppsWithProps[Math.floor(Math.random() * oppsWithProps.length)];
+        const myIncompSets = player.properties.filter(s => s.cards.length > 0);
+        if (opp && myIncompSets.length > 0) {
+          const theirSets = opp.properties.filter(s => !s.isComplete && s.cards.length > 0);
+          const theirSet = theirSets[Math.floor(Math.random() * theirSets.length)];
+          const mySet = myIncompSets[Math.floor(Math.random() * myIncompSets.length)];
+          if (theirSet && mySet) {
+            const theirCard = theirSet.cards[Math.floor(Math.random() * theirSet.cards.length)];
+            const myCard = mySet.cards[Math.floor(Math.random() * mySet.cards.length)];
+            targetData = {
+              targetPlayerId: opp.id,
+              theirColor: theirSet.color, theirCardId: theirCard.id,
+              myColor: mySet.color, myCardId: myCard.id,
+            };
+          }
+        }
+      } else if (card.actionType === 'house' || card.actionType === 'hotel') {
+        const eligible = player.properties.filter(s =>
+          s.color !== 'black' && s.color !== 'utility' &&
+          (card.actionType === 'house' ? (s.isComplete && !s.hasHouse) : (s.isComplete && s.hasHouse && !s.hasHotel))
+        );
+        const set = eligible[Math.floor(Math.random() * eligible.length)];
+        targetData = set ? { color: set.color } : null;
+      }
+
+      if (targetData !== null || ['passgo', 'birthday'].includes(card.actionType ?? '')) {
+        handleActionCard(room, roomId, player, card, targetData);
+        played++;
+        if (room.pendingPayments.length > 0 || room.pendingActions.length > 0) break;
+        continue;
+      } else {
+        // No valid target — bank the card as cash instead
+        player.bank.push(card);
+      }
+    }
+    played++;
+  }
+
+  player.cardsPlayedThisTurn = 0;
+  advanceTurn(room, roomId);
+}
+
 function processAITurn(room: GameRoom, player: Player): void {
   if (!player.isAI) return;
 
   const roomId = [...rooms.entries()].find(([, r]) => r === room)?.[0] || '';
+  const skill = player.aiSkill ?? 'medium';
 
   const drawCount = player.hadZeroCardsAtEnd ? 5 : 2;
   player.hadZeroCardsAtEnd = false;
   player.hand.push(...safeDraw(room, drawCount));
 
-  // Free action: rearrange wildcards before playing
+  if (skill === 'beginner') {
+    processBeginnerAITurn(room, roomId, player);
+    return;
+  }
+
+  // Medium / Advanced: strategic play
   aiRearrangeWildcards(player);
+
+  // Advanced: identify the leading opponent to target
+  const others = room.players.filter(p => p.id !== player.id);
+  const leader = skill === 'advanced'
+    ? others.reduce((best, p) =>
+        p.properties.filter(s => s.isComplete).length >= best.properties.filter(s => s.isComplete).length ? p : best
+      , others[0] ?? null)
+    : null;
 
   let played = 0;
   while (played < 3 && player.hand.length > 0) {
@@ -291,7 +438,6 @@ function processAITurn(room: GameRoom, player: Player): void {
     const cash   = player.hand.filter(c => c.type === 'cash');
     const acts   = player.hand.filter(c => c.type === 'action' && c.actionType !== 'sayno' && c.actionType !== 'doublerent');
     const rents  = player.hand.filter(c => c.type === 'rent');
-    const others = room.players.filter(p => p.id !== player.id);
 
     let chosenCard: Card | null = null;
     let chosenTarget: Record<string, unknown> | null = null;
@@ -313,14 +459,31 @@ function processAITurn(room: GameRoom, player: Player): void {
       }
     }
 
-    // 2. PassGo — draw more cards if hand is thin
+    // 2. Deal Breaker (advanced: step 2; medium: step 3)
+    if (!chosenCard && (skill === 'advanced')) {
+      const db = acts.find(c => c.actionType === 'dealbreaker');
+      if (db) {
+        const targets = leader ? [leader, ...others.filter(p => p.id !== leader.id)] : others;
+        for (const opp of targets) {
+          for (const set of opp.properties.filter(s => s.isComplete)) {
+            const mySet = player.properties.find(p => p.color === set.color);
+            if (!mySet?.isComplete) {
+              chosenCard = db; chosenTarget = { targetPlayerId: opp.id, color: set.color }; break;
+            }
+          }
+          if (chosenCard) break;
+        }
+      }
+    }
+
+    // 3. PassGo — draw more cards if hand is thin
     if (!chosenCard) {
       const passgo = acts.find(c => c.actionType === 'passgo');
       if (passgo && player.hand.length <= 5) chosenCard = passgo;
     }
 
-    // 3. Deal Breaker — steal a complete set from opponent
-    if (!chosenCard) {
+    // 4. Deal Breaker (medium: here)
+    if (!chosenCard && skill === 'medium') {
       const db = acts.find(c => c.actionType === 'dealbreaker');
       if (db) {
         for (const opp of others) {
@@ -335,12 +498,16 @@ function processAITurn(room: GameRoom, player: Player): void {
       }
     }
 
-    // 4. Sly Deal — steal a card that helps complete our set
+    // 5. Sly Deal — steal a card that helps complete our set
     if (!chosenCard) {
       const sly = acts.find(c => c.actionType === 'slydeal');
       if (sly) {
+        // Advanced: prefer targeting the leader
+        const targetList = (skill === 'advanced' && leader)
+          ? [leader, ...others.filter(p => p.id !== leader.id)]
+          : others;
         let bestOpp: Player | null = null, bestColor: PropertyColor | null = null, bestCardId: string | null = null, bestScore = -1;
-        for (const opp of others) {
+        for (const opp of targetList) {
           for (const set of opp.properties.filter(s => !s.isComplete && s.cards.length > 0)) {
             for (const c of set.cards) {
               const mySet = player.properties.find(p => p.color === set.color);
@@ -355,7 +522,7 @@ function processAITurn(room: GameRoom, player: Player): void {
       }
     }
 
-    // 5. Properties — prioritize sets closest to completion
+    // 6. Properties — prioritize sets closest to completion
     if (!chosenCard && props.length > 0) {
       const sorted = [...props].sort((a, b) => {
         const ac = (a.type === 'wild' && a.colors?.length ? aiBestColorForWild(player, a) : a.color) as PropertyColor;
@@ -371,7 +538,7 @@ function processAITurn(room: GameRoom, player: Player): void {
       if (color) { chosenCard = best; chosenTarget = { color }; }
     }
 
-    // 6. Birthday / Debt Collector — collect money
+    // 7. Birthday / Debt Collector — advanced targets the leader
     if (!chosenCard) {
       const bday = acts.find(c => c.actionType === 'birthday');
       if (bday && others.some(p => p.bank.length > 0 || p.properties.some(s => s.cards.length > 0))) {
@@ -381,45 +548,48 @@ function processAITurn(room: GameRoom, player: Player): void {
     if (!chosenCard) {
       const dc = acts.find(c => c.actionType === 'debtcollector');
       if (dc && others.length > 0) {
-        const richest = others.reduce((b, p) =>
-          p.bank.reduce((s, c) => s + c.value, 0) > b.bank.reduce((s, c) => s + c.value, 0) ? p : b, others[0]);
-        chosenCard = dc; chosenTarget = { targetPlayerId: richest.id };
+        const target = (skill === 'advanced' && leader)
+          ? leader
+          : others.reduce((b, p) =>
+              p.bank.reduce((s, c) => s + c.value, 0) > b.bank.reduce((s, c) => s + c.value, 0) ? p : b, others[0]);
+        chosenCard = dc; chosenTarget = { targetPlayerId: target.id };
       }
     }
 
-    // 7. Rent — only if meaningful amount or already winning
+    // 8. Rent — advanced uses Double Rent if available
     if (!chosenCard && rents.length > 0) {
+      const drCard = skill === 'advanced' ? player.hand.find(c => c.actionType === 'doublerent') : undefined;
       let bestRentCard: Card | null = null, bestRentColor: PropertyColor | null = null, bestRent = 0;
       for (const rc of rents) {
         const colors: PropertyColor[] = (rc.rentColors && rc.rentColors.length > 0)
           ? rc.rentColors.filter(col => (player.properties.find(p => p.color === col)?.cards.length ?? 0) > 0)
           : player.properties.filter(s => s.cards.length > 0).map(s => s.color);
         for (const col of colors) {
-          const r = calculateRent(player, col, false);
+          const r = calculateRent(player, col, !!drCard);
           if (r > bestRent) { bestRent = r; bestRentColor = col; bestRentCard = rc; }
         }
       }
       if (bestRentCard && bestRentColor && (bestRent >= 3 || mySets >= 1)) {
-        chosenCard = bestRentCard; chosenTarget = { color: bestRentColor };
+        chosenCard = bestRentCard; chosenTarget = { color: bestRentColor, drCard };
       }
     }
 
-    // 8. PassGo any time
+    // 9. PassGo any time
     if (!chosenCard) {
       const passgo = acts.find(c => c.actionType === 'passgo');
       if (passgo) chosenCard = passgo;
     }
 
-    // 9. Small cash (< 4M)
+    // 10. Small cash (< 4M)
     if (!chosenCard && cash.length > 0) {
       const small = cash.filter(c => c.value < 4).sort((a, b) => a.value - b.value);
       if (small.length > 0) chosenCard = small[0];
     }
 
-    // 10. Any remaining action we can discard
+    // 11. Any remaining action we can discard
     if (!chosenCard && acts.length > 0) chosenCard = acts[0];
 
-    // 11. Any remaining cash
+    // 12. Any remaining cash
     if (!chosenCard && cash.length > 0) {
       chosenCard = [...cash].sort((a, b) => a.value - b.value)[0];
     }
@@ -443,7 +613,19 @@ function processAITurn(room: GameRoom, player: Player): void {
       room.discardPile.push(chosenCard);
       const rentColor = chosenTarget?.color as PropertyColor | undefined;
       if (rentColor) {
-        const rent = calculateRent(player, rentColor, false);
+        // Advanced AI: use Double Rent if selected
+        let doubled = room.doubleRentActive;
+        room.doubleRentActive = false;
+        if (skill === 'advanced' && chosenTarget?.drCard) {
+          const dr = chosenTarget.drCard as Card;
+          const drIdx = player.hand.findIndex(c => c.id === dr.id);
+          if (drIdx !== -1) {
+            const [drCard] = player.hand.splice(drIdx, 1);
+            room.discardPile.push(drCard);
+            doubled = true;
+          }
+        }
+        const rent = calculateRent(player, rentColor, doubled);
         requestPayments(room, roomId, player, others, rent, 'rent');
       }
       played++;
@@ -487,7 +669,7 @@ function advanceTurn(room: GameRoom, roomId: string) {
   if (next.isAI) setTimeout(() => processAITurn(room, next), 2000);
 }
 
-// ─── Deal Breaker Action Resolver ────────────────────────────────────────────
+// ─── Action Executors ─────────────────────────────────────────────────────────
 
 function executeDealBreaker(room: GameRoom, action: PendingAction): void {
   const actor = room.players.find(p => p.id === action.actorId);
@@ -512,6 +694,56 @@ function executeDealBreaker(room: GameRoom, action: PendingAction): void {
   }
 }
 
+function executeSlyDeal(room: GameRoom, action: PendingAction): void {
+  const actor = room.players.find(p => p.id === action.actorId);
+  const target = room.players.find(p => p.id === action.targetId);
+  if (!actor || !target) return;
+  const targetSet = target.properties.find(p => p.color === action.targetData?.color);
+  if (targetSet && !targetSet.isComplete) {
+    const ci = targetSet.cards.findIndex(c => c.id === action.targetData?.cardId);
+    if (ci !== -1) {
+      const [stolen] = targetSet.cards.splice(ci, 1);
+      targetSet.isComplete = checkPropertySetComplete(targetSet);
+      const mySet = actor.properties.find(p => p.color === action.targetData?.color);
+      if (mySet) { mySet.cards.push(stolen); mySet.isComplete = checkPropertySetComplete(mySet); }
+      if (target.socketId) {
+        io.to(target.socketId).emit('card-taken', {
+          takerName: actor.name, cardName: stolen.name,
+          color: action.targetData?.color, dealType: 'slydeal',
+        });
+      }
+    }
+  }
+}
+
+function executeForcedDeal(room: GameRoom, action: PendingAction): void {
+  const actor = room.players.find(p => p.id === action.actorId);
+  const target = room.players.find(p => p.id === action.targetId);
+  if (!actor || !target) return;
+  const mySet = actor.properties.find(p => p.color === action.targetData?.myColor);
+  const theirSet = target.properties.find(p => p.color === action.targetData?.theirColor);
+  if (mySet && theirSet && !theirSet.isComplete) {
+    const myCI = mySet.cards.findIndex(c => c.id === action.targetData?.myCardId);
+    const theirCI = theirSet.cards.findIndex(c => c.id === action.targetData?.theirCardId);
+    if (myCI !== -1 && theirCI !== -1) {
+      const [myCard] = mySet.cards.splice(myCI, 1);
+      const [theirCard] = theirSet.cards.splice(theirCI, 1);
+      mySet.isComplete = checkPropertySetComplete(mySet);
+      theirSet.isComplete = checkPropertySetComplete(theirSet);
+      const myCardDest = target.properties.find(p => p.color === myCard.color);
+      if (myCardDest) { myCardDest.cards.push(myCard); myCardDest.isComplete = checkPropertySetComplete(myCardDest); }
+      const theirCardDest = actor.properties.find(p => p.color === theirCard.color);
+      if (theirCardDest) { theirCardDest.cards.push(theirCard); theirCardDest.isComplete = checkPropertySetComplete(theirCardDest); }
+      if (target.socketId) {
+        io.to(target.socketId).emit('card-taken', {
+          takerName: actor.name, cardName: theirCard.name,
+          color: theirCard.color, dealType: 'forceddeal',
+        });
+      }
+    }
+  }
+}
+
 function resolveAction(room: GameRoom, roomId: string, action: PendingAction): void {
   // Clear any pending timer for this action
   const t = actionTimers.get(action.id);
@@ -519,7 +751,9 @@ function resolveAction(room: GameRoom, roomId: string, action: PendingAction): v
 
   // Execute if jsnCount is even (action wins), skip if odd (JSN wins)
   if (action.jsnCount % 2 === 0) {
-    executeDealBreaker(room, action);
+    if (action.type === 'dealbreaker') executeDealBreaker(room, action);
+    else if (action.type === 'slydeal') executeSlyDeal(room, action);
+    else if (action.type === 'forceddeal') executeForcedDeal(room, action);
   }
 
   room.pendingActions = room.pendingActions.filter(a => a.id !== action.id);
@@ -636,6 +870,31 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
 
     case 'slydeal': {
       const targetPlayer = room.players.find(p => p.id === targetData?.targetPlayerId);
+      if (targetPlayer && !targetPlayer.isAI) {
+        const hasJsn = targetPlayer.hand.some(c => c.actionType === 'sayno');
+        if (hasJsn) {
+          const pendingAction: PendingAction = {
+            id: uuidv4(), type: 'slydeal',
+            actorId: player.id, targetId: targetPlayer.id,
+            targetData, cardId: card.id,
+            responderId: targetPlayer.id, jsnCount: 0,
+          };
+          room.pendingActions.push(pendingAction);
+          io.to(targetPlayer.socketId).emit('deal-breaker-request', {
+            actionId: pendingAction.id, actorName: player.name,
+            color: targetData?.color, room,
+          });
+          const timer = setTimeout(() => {
+            const r = rooms.get(roomId);
+            if (!r) return;
+            const a = r.pendingActions.find(x => x.id === pendingAction.id);
+            if (a) resolveAction(r, roomId, a);
+          }, 15000);
+          actionTimers.set(pendingAction.id, timer);
+          return;
+        }
+      }
+      // Execute immediately (AI target or no JSN in hand)
       if (targetPlayer) {
         const targetSet = targetPlayer.properties.find(p => p.color === targetData?.color);
         if (targetSet && !targetSet.isComplete) {
@@ -645,7 +904,6 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
             targetSet.isComplete = checkPropertySetComplete(targetSet);
             const mySet = player.properties.find(p => p.color === targetData?.color);
             if (mySet) { mySet.cards.push(stolen); mySet.isComplete = checkPropertySetComplete(mySet); }
-            // Notify the victim
             if (targetPlayer.socketId) {
               io.to(targetPlayer.socketId).emit('card-taken', {
                 takerName: player.name, cardName: stolen.name,
@@ -660,6 +918,31 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
 
     case 'forceddeal': {
       const targetPlayer = room.players.find(p => p.id === targetData?.targetPlayerId);
+      if (targetPlayer && !targetPlayer.isAI) {
+        const hasJsn = targetPlayer.hand.some(c => c.actionType === 'sayno');
+        if (hasJsn) {
+          const pendingAction: PendingAction = {
+            id: uuidv4(), type: 'forceddeal',
+            actorId: player.id, targetId: targetPlayer.id,
+            targetData, cardId: card.id,
+            responderId: targetPlayer.id, jsnCount: 0,
+          };
+          room.pendingActions.push(pendingAction);
+          io.to(targetPlayer.socketId).emit('deal-breaker-request', {
+            actionId: pendingAction.id, actorName: player.name,
+            color: targetData?.theirColor, room,
+          });
+          const timer = setTimeout(() => {
+            const r = rooms.get(roomId);
+            if (!r) return;
+            const a = r.pendingActions.find(x => x.id === pendingAction.id);
+            if (a) resolveAction(r, roomId, a);
+          }, 15000);
+          actionTimers.set(pendingAction.id, timer);
+          return;
+        }
+      }
+      // Execute immediately (AI target or no JSN in hand)
       if (targetPlayer) {
         const mySet = player.properties.find(p => p.color === targetData?.myColor);
         const theirSet = targetPlayer.properties.find(p => p.color === targetData?.theirColor);
@@ -669,15 +952,12 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
           if (myCI !== -1 && theirCI !== -1) {
             const [myCard] = mySet.cards.splice(myCI, 1);
             const [theirCard] = theirSet.cards.splice(theirCI, 1);
-            // Update completion of the source sets now that cards are removed
             mySet.isComplete = checkPropertySetComplete(mySet);
             theirSet.isComplete = checkPropertySetComplete(theirSet);
-            // Each card moves to the destination set matching ITS OWN color identity
             const myCardDest = targetPlayer.properties.find(p => p.color === myCard.color);
             if (myCardDest) { myCardDest.cards.push(myCard); myCardDest.isComplete = checkPropertySetComplete(myCardDest); }
             const theirCardDest = player.properties.find(p => p.color === theirCard.color);
             if (theirCardDest) { theirCardDest.cards.push(theirCard); theirCardDest.isComplete = checkPropertySetComplete(theirCardDest); }
-            // Notify the victim
             if (targetPlayer.socketId) {
               io.to(targetPlayer.socketId).emit('card-taken', {
                 takerName: player.name, cardName: theirCard.name,
@@ -720,16 +1000,17 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
 io.on('connection', (socket) => {
   console.log('✅ Client connected:', socket.id);
 
-  socket.on('create-room', ({ playerName, version, mode, aiCount, turnTimeLimit, persistentPlayerId }: {
-    playerName: string; version: string; mode: 'single' | 'multi'; aiCount?: number; turnTimeLimit?: number; persistentPlayerId?: string;
+  socket.on('create-room', ({ playerName, version, mode, aiCount, turnTimeLimit, persistentPlayerId, aiSkillLevel }: {
+    playerName: string; version: string; mode: 'single' | 'multi'; aiCount?: number; turnTimeLimit?: number; persistentPlayerId?: string; aiSkillLevel?: AISkillLevel;
   }) => {
     const roomId = uuidv4().slice(0, 8).toUpperCase();
     const player = createPlayer(playerName, socket.id, true, false, persistentPlayerId);
     const roomPlayers: Player[] = [player];
+    const skill: AISkillLevel = aiSkillLevel ?? 'medium';
 
     if (mode === 'single' && aiCount) {
       for (let i = 0; i < aiCount; i++) {
-        roomPlayers.push(createPlayer(`${AI_NAMES[i % AI_NAMES.length]} (AI)`, `ai-${i}`, false, true));
+        roomPlayers.push(createPlayer(`${AI_NAMES[i % AI_NAMES.length]} (AI)`, `ai-${i}`, false, true, undefined, skill));
       }
     }
 
@@ -742,6 +1023,7 @@ io.on('connection', (socket) => {
       pendingPayments: [], pendingActions: [], doubleRentActive: false,
       turnTimeLimit: turnTimeLimit ?? 60,
       turnStartedAt: 0,
+      aiSkillLevel: skill,
     };
 
     rooms.set(roomId, room);
@@ -826,13 +1108,14 @@ io.on('connection', (socket) => {
     socket.to(upperRoomId).emit('spectator-joined', { spectator, room });
   });
 
-  socket.on('add-ai-player', ({ roomId, playerId }: { roomId: string; playerId: string }) => {
+  socket.on('add-ai-player', ({ roomId, playerId, aiSkillLevel }: { roomId: string; playerId: string; aiSkillLevel?: AISkillLevel }) => {
     const room = rooms.get(roomId);
     if (!room) return;
     if (room.hostId !== playerId) { socket.emit('error', { message: 'Only host can add AI players' }); return; }
     if (room.players.length >= 5) { socket.emit('error', { message: 'Room is full' }); return; }
     const aiIndex = room.players.filter(p => p.isAI).length;
-    const ai = createPlayer(`${AI_NAMES[aiIndex % AI_NAMES.length]} (AI)`, `ai-${Date.now()}`, false, true);
+    const skill: AISkillLevel = aiSkillLevel ?? room.aiSkillLevel ?? 'medium';
+    const ai = createPlayer(`${AI_NAMES[aiIndex % AI_NAMES.length]} (AI)`, `ai-${Date.now()}`, false, true, undefined, skill);
     room.players.push(ai);
     io.to(roomId).emit('player-joined', { player: ai, room });
   });
@@ -1232,12 +1515,14 @@ io.on('connection', (socket) => {
     if (!responder || responder.socketId !== socket.id) return;
 
     if (response === 'accept') {
-      // If Deal Breaker is currently "cancelled" (odd jsnCount), notify the victim their JSN worked
+      // If action is currently "cancelled" (odd jsnCount), notify the victim their JSN worked
       if (action.jsnCount > 0 && action.jsnCount % 2 === 1) {
+        const actionLabel = action.type === 'dealbreaker' ? 'Deal Breaker'
+          : action.type === 'slydeal' ? 'Sly Deal' : 'Forced Deal';
         const victim = room.players.find(p => p.id === action.targetId);
         if (victim?.socketId) {
           io.to(victim.socketId).emit('jsn-notification', {
-            message: `${responder.name} accepted your Just Say No — your ${action.targetData?.color ?? ''} set is safe!`,
+            message: `${responder.name} accepted your Just Say No — your ${actionLabel} is cancelled!`,
           });
         }
       }
@@ -1287,19 +1572,20 @@ io.on('connection', (socket) => {
     } else {
       // No counter possible
       if (action.jsnCount % 2 === 1) {
-        // Odd = Deal Breaker cancelled — notify actor and the responder (victim)
+        // Odd = action cancelled — notify both parties
+        const actionLabel = action.type === 'dealbreaker' ? 'Deal Breaker'
+          : action.type === 'slydeal' ? 'Sly Deal' : 'Forced Deal';
         const actorPlayer = room.players.find(p => p.id === action.actorId);
         if (actorPlayer?.socketId) {
           io.to(actorPlayer.socketId).emit('jsn-notification', {
-            message: `${responder.name} cancelled your Deal Breaker with Just Say No!`,
+            message: `${responder.name} cancelled your ${actionLabel} with Just Say No!`,
           });
         }
-        // Tell the responder their JSN worked
         io.to(responder.socketId).emit('jsn-notification', {
-          message: 'Your Just Say No cancelled the Deal Breaker!',
+          message: `Your Just Say No cancelled the ${actionLabel}!`,
         });
       }
-      // Even: Deal Breaker executes via resolveAction — victim gets card-taken notification
+      // Even: action executes via resolveAction
       resolveAction(room, roomId, action);
     }
   });

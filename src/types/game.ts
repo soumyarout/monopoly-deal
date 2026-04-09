@@ -1,6 +1,7 @@
 export type CardType = 'property' | 'cash' | 'action' | 'rent' | 'wild';
 export type PropertyColor = 'brown' | 'lightblue' | 'pink' | 'orange' | 'red' | 'yellow' | 'green' | 'blue' | 'black' | 'utility';
 export type GameVersion = 'us' | 'uk' | 'india';
+export type AISkillLevel = 'beginner' | 'medium' | 'advanced';
 export type GamePhase = 'lobby' | 'playing' | 'ended';
 export type TurnPhase = 'draw' | 'play' | 'end';
 
@@ -51,8 +52,8 @@ export interface PendingPayment {
 
 export interface PendingAction {
   id: string;
-  type: 'dealbreaker';
-  actorId: string;      // who played Deal Breaker
+  type: 'dealbreaker' | 'slydeal' | 'forceddeal';
+  actorId: string;      // who played the action card
   targetId: string;     // whose set is being stolen
   targetData: any;      // { targetPlayerId, color }
   cardId: string;       // Deal Breaker card id (already in discard)
@@ -78,6 +79,7 @@ export interface Player {
   isHost: boolean;
   isReady: boolean;
   isAI?: boolean;
+  aiSkill?: AISkillLevel;
   cardsPlayedThisTurn: number;
   hadZeroCardsAtEnd: boolean; // draw 5 next turn instead of 2
 }
@@ -101,6 +103,7 @@ export interface GameRoom {
   doubleRentActive: boolean; // Double the Rent card played this turn
   turnTimeLimit: number;     // seconds per turn; 0 = no limit
   turnStartedAt: number;     // ms timestamp when the current turn began
+  aiSkillLevel: AISkillLevel; // skill level for AI players in this room
 }
 
 export interface GameState {

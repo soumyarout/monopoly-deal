@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import type { GameRoom, Player, Card, GameVersion, PendingPayment, PendingAction, Spectator, PropertyColor } from '@/types/game';
+import type { GameRoom, Player, Card, GameVersion, PendingPayment, PendingAction, Spectator, PropertyColor, AISkillLevel } from '@/types/game';
 import { v4 as uuidv4 } from 'uuid';
 
 const PERSISTENT_ID_KEY = 'mdeal-pid';
@@ -35,13 +35,13 @@ interface SocketState {
 }
 
 interface SocketActions {
-  createRoom: (playerName: string, version: GameVersion, mode: 'single' | 'multi', aiCount?: number, turnTimeLimit?: number) => void;
+  createRoom: (playerName: string, version: GameVersion, mode: 'single' | 'multi', aiCount?: number, turnTimeLimit?: number, aiSkillLevel?: AISkillLevel) => void;
   joinRoom: (playerName: string, roomCode: string) => void;
   watchRoom: (playerName: string, roomCode: string) => void;
   startGame: () => void;
   toggleReady: () => void;
   leaveRoom: () => void;
-  addAIPlayer: () => void;
+  addAIPlayer: (aiSkillLevel?: AISkillLevel) => void;
   removeAIPlayer: (aiPlayerId: string) => void;
   drawCards: () => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -216,8 +216,8 @@ export function useSocket(): [SocketState, SocketActions] {
     return () => { socket.disconnect(); };
   }, []);
 
-  const createRoom = useCallback((playerName: string, version: GameVersion, mode: 'single' | 'multi', aiCount?: number, turnTimeLimit = 60) => {
-    socketRef.current?.emit('create-room', { playerName, version, mode, aiCount, turnTimeLimit, persistentPlayerId: getPersistentId() });
+  const createRoom = useCallback((playerName: string, version: GameVersion, mode: 'single' | 'multi', aiCount?: number, turnTimeLimit = 60, aiSkillLevel: AISkillLevel = 'medium') => {
+    socketRef.current?.emit('create-room', { playerName, version, mode, aiCount, turnTimeLimit, aiSkillLevel, persistentPlayerId: getPersistentId() });
   }, []);
 
   const joinRoom = useCallback((playerName: string, roomCode: string) => {
@@ -244,9 +244,9 @@ export function useSocket(): [SocketState, SocketActions] {
     setState({ connected: false, room: null, currentPlayer: null, isSpectator: false, spectatorInfo: null, error: null, mustDiscard: 0, pendingPayment: null, pendingAction: null, pendingJsnCounter: null, cardTakenNotification: null, jsnNotification: null });
   }, []);
 
-  const addAIPlayer = useCallback(() => {
+  const addAIPlayer = useCallback((aiSkillLevel?: AISkillLevel) => {
     if (state.room && state.currentPlayer?.isHost)
-      socketRef.current?.emit('add-ai-player', { roomId: state.room.id, playerId: state.currentPlayer.id });
+      socketRef.current?.emit('add-ai-player', { roomId: state.room.id, playerId: state.currentPlayer.id, aiSkillLevel: aiSkillLevel ?? state.room.aiSkillLevel ?? 'medium' });
   }, [state.room, state.currentPlayer]);
 
   const removeAIPlayer = useCallback((aiPlayerId: string) => {

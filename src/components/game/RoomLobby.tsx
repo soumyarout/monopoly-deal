@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { GameRoom, Player, GameVersion } from '@/types/game';
+import type { GameRoom, Player, GameVersion, AISkillLevel } from '@/types/game';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Users, Globe, Check, Copy, LogOut, Play, Bot, Crown, Plus, Minus } from 'lucide-react';
@@ -10,7 +10,7 @@ interface RoomLobbyProps {
   onStartGame: () => void;
   onLeaveRoom: () => void;
   onToggleReady: () => void;
-  onAddAI?: () => void;
+  onAddAI?: (aiSkillLevel: AISkillLevel) => void;
   onRemoveAI?: (aiPlayerId: string) => void;
 }
 
@@ -24,16 +24,17 @@ const CAR_GRADIENTS = [
   'from-purple-500 to-pink-500',
 ];
 
-export function RoomLobby({ 
-  room, 
-  currentPlayer, 
-  onStartGame, 
-  onLeaveRoom, 
+export function RoomLobby({
+  room,
+  currentPlayer,
+  onStartGame,
+  onLeaveRoom,
   onToggleReady,
   onAddAI,
   onRemoveAI,
 }: RoomLobbyProps) {
   const [copied, setCopied] = useState(false);
+  const [aiSkillLevel, setAiSkillLevel] = useState<AISkillLevel>('medium');
   const isHost = currentPlayer.isHost;
   const realPlayers = room.players.filter(p => !p.isAI);
   const aiPlayers = room.players.filter(p => p.isAI);
@@ -122,7 +123,7 @@ export function RoomLobby({
           {/* Add AI Players (Host Only) */}
           {isHost && room.mode !== 'single' && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
                     <Bot className="w-5 h-5 text-white" />
@@ -130,7 +131,7 @@ export function RoomLobby({
                   <div>
                     <p className="font-bold text-gray-800">Add AI Players</p>
                     <p className="text-sm text-gray-500">
-                      {needsMorePlayers 
+                      {needsMorePlayers
                         ? `Need ${2 - room.players.length} more player(s) to start`
                         : 'Add AI to fill empty spots'
                       }
@@ -138,12 +139,10 @@ export function RoomLobby({
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">
-                    {aiPlayers.length} AI
-                  </span>
+                  <span className="text-sm text-gray-600">{aiPlayers.length} AI</span>
                   {canAddAI && onAddAI && (
                     <Button
-                      onClick={onAddAI}
+                      onClick={() => onAddAI(aiSkillLevel)}
                       size="sm"
                       className="bg-blue-500 hover:bg-blue-600 text-white"
                     >
@@ -153,14 +152,42 @@ export function RoomLobby({
                   )}
                 </div>
               </div>
-              
+
+              {/* AI Skill Level Selector */}
+              <div className="flex gap-2 mb-3">
+                {([
+                  { value: 'beginner', label: '🐣 Beginner' },
+                  { value: 'medium',   label: '🤖 Medium'   },
+                  { value: 'advanced', label: '🏆 Advanced' },
+                ] as { value: AISkillLevel; label: string }[]).map(s => (
+                  <button
+                    key={s.value}
+                    type="button"
+                    onClick={() => setAiSkillLevel(s.value)}
+                    className={cn(
+                      'flex-1 py-1.5 rounded-lg border-2 text-xs font-medium transition-all',
+                      aiSkillLevel === s.value
+                        ? 'border-blue-500 bg-blue-100 text-blue-700'
+                        : 'border-gray-200 text-gray-500 hover:border-gray-300 bg-white'
+                    )}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+
               {/* AI Player List with Remove Buttons */}
               {aiPlayers.length > 0 && onRemoveAI && (
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2">
                   {aiPlayers.map((ai) => (
                     <div key={ai.id} className="flex items-center gap-1 bg-white rounded-lg px-2 py-1 border">
                       <Bot className="w-3 h-3 text-blue-500" />
                       <span className="text-sm">{ai.name}</span>
+                      {ai.aiSkill && (
+                        <span className="text-[10px] text-gray-400 ml-0.5">
+                          ({ai.aiSkill === 'beginner' ? '🐣' : ai.aiSkill === 'advanced' ? '🏆' : '🤖'})
+                        </span>
+                      )}
                       <button
                         onClick={() => onRemoveAI(ai.id)}
                         className="ml-1 text-red-500 hover:text-red-700 p-1"

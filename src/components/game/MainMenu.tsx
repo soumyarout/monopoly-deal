@@ -4,12 +4,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Slider } from '@/components/ui/slider';
-import type { GameVersion } from '@/types/game';
+import type { GameVersion, AISkillLevel } from '@/types/game';
 import { cn } from '@/lib/utils';
 import { Plus, LogIn, Users, Globe, Gamepad2, Bot, User, Eye } from 'lucide-react';
 
 interface MainMenuProps {
-  onCreateRoom: (playerName: string, version: GameVersion, mode: 'single' | 'multi', aiCount?: number, turnTimeLimit?: number) => void;
+  onCreateRoom: (playerName: string, version: GameVersion, mode: 'single' | 'multi', aiCount?: number, turnTimeLimit?: number, aiSkillLevel?: AISkillLevel) => void;
   onJoinRoom: (playerName: string, roomCode: string) => void;
   onWatchRoom: (playerName: string, roomCode: string) => void;
   connected?: boolean;
@@ -30,6 +30,7 @@ export function MainMenu({ onCreateRoom, onJoinRoom, onWatchRoom, connected = tr
   const [version, setVersion] = useState<GameVersion>('us');
   const [aiCount, setAiCount] = useState(3);
   const [turnTimeLimit, setTurnTimeLimit] = useState(60);
+  const [aiSkillLevel, setAiSkillLevel] = useState<AISkillLevel>('medium');
   const [error, setError] = useState('');
 
   const handleCreateRoom = (gameMode: 'single' | 'multi') => {
@@ -37,7 +38,7 @@ export function MainMenu({ onCreateRoom, onJoinRoom, onWatchRoom, connected = tr
       setError('Please enter your name');
       return;
     }
-    onCreateRoom(playerName.trim(), version, gameMode, gameMode === 'single' ? aiCount : undefined, turnTimeLimit);
+    onCreateRoom(playerName.trim(), version, gameMode, gameMode === 'single' ? aiCount : undefined, turnTimeLimit, aiSkillLevel);
   };
 
   const handleJoinRoom = () => {
@@ -285,7 +286,36 @@ export function MainMenu({ onCreateRoom, onJoinRoom, onWatchRoom, connected = tr
               </div>
             </div>
 
-            <Button 
+            <div>
+              <Label className="text-gray-700 font-medium mb-3 block">
+                🧠 AI Skill Level
+              </Label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { value: 'beginner', label: 'Beginner', desc: 'Plays randomly', emoji: '🐣' },
+                  { value: 'medium',   label: 'Medium',   desc: 'Balanced play', emoji: '🤖' },
+                  { value: 'advanced', label: 'Advanced', desc: 'Aggressive',     emoji: '🏆' },
+                ] as { value: AISkillLevel; label: string; desc: string; emoji: string }[]).map(s => (
+                  <button
+                    key={s.value}
+                    type="button"
+                    onClick={() => setAiSkillLevel(s.value)}
+                    className={cn(
+                      'flex flex-col items-center p-3 rounded-xl border-2 text-sm font-medium transition-all',
+                      aiSkillLevel === s.value
+                        ? 'border-green-500 bg-green-50 text-green-700'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    )}
+                  >
+                    <span className="text-xl mb-1">{s.emoji}</span>
+                    <span className="font-bold text-xs">{s.label}</span>
+                    <span className="text-[10px] text-gray-400 mt-0.5">{s.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <Button
               onClick={() => handleCreateRoom('single')}
               className="w-full h-14 text-lg bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-lg"
             >

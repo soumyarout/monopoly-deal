@@ -32,7 +32,16 @@ export function ActionResponseModal({ action, myPlayer, actorName, onAccept, onJ
   const jsnCards = myPlayer.hand.filter(c => c.actionType === 'sayno');
   const colorLabel = getColorDisplayName(action.targetData?.color as PropertyColor);
   const isCounter = action.jsnCount > 0 && action.jsnCount % 2 === 1;
-  // jsnCount odd means the action is currently "cancelled" — actor is countering
+
+  const actionLabel = action.type === 'dealbreaker' ? 'Deal Breaker'
+    : action.type === 'slydeal' ? 'Sly Deal'
+    : 'Forced Deal';
+
+  const initialAlertText = action.type === 'dealbreaker'
+    ? `${actorName} is stealing your complete ${colorLabel} set!`
+    : action.type === 'slydeal'
+    ? `${actorName} is using Sly Deal to steal one of your properties!`
+    : `${actorName} wants to swap one of your properties using Forced Deal!`;
 
   return (
     <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-4">
@@ -42,15 +51,15 @@ export function ActionResponseModal({ action, myPlayer, actorName, onAccept, onJ
           <div className="flex items-center gap-2 mb-1">
             <Shield className="w-5 h-5 flex-shrink-0" />
             <p className="font-bold text-sm">
-              {isCounter ? 'Counter with Just Say No?' : 'Deal Breaker Alert!'}
+              {isCounter ? 'Counter with Just Say No?' : `${actionLabel} Alert!`}
             </p>
           </div>
           <p className="text-red-200 text-xs leading-snug">
             {isCounter
               ? action.jsnCount === 1
-                ? `${actorName} played Just Say No against your Deal Breaker! Counter with yours?`
+                ? `${actorName} played Just Say No against your ${actionLabel}! Counter with yours?`
                 : `${actorName} countered your Just Say No! Play another to cancel?`
-              : `${actorName} is stealing your complete ${colorLabel} set!`
+              : initialAlertText
             }
           </p>
 
@@ -83,7 +92,11 @@ export function ActionResponseModal({ action, myPlayer, actorName, onAccept, onJ
             className="w-full h-10 text-sm text-gray-600"
           >
             <CheckCircle className="w-4 h-4 mr-2" />
-            {isCounter ? 'Accept (deal breaker goes through)' : `Accept (give up ${colorLabel} set)`}
+            {isCounter
+              ? `Accept (${actionLabel} goes through)`
+              : action.type === 'dealbreaker'
+              ? `Accept (give up ${colorLabel} set)`
+              : 'Accept'}
           </Button>
         </div>
       </div>
