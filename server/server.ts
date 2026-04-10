@@ -314,11 +314,10 @@ function aiPay(_room: GameRoom, debtor: Player, creditor: Player, amount: number
         if (!set.isComplete) { set.hasHouse = false; set.hasHotel = false; }
         card.color = set.color; // keep card.color in sync
         const cs = creditor.properties.find(p => p.color === set.color);
-        if (cs && !cs.isComplete) {
+        if (cs) {
           cs.cards.push(card); cs.isComplete = checkPropertySetComplete(cs);
         } else {
-          // Creditor's matching set is complete or not found — bank card as cash
-          creditor.bank.push(card);
+          creditor.bank.push(card); // no matching set (shouldn't happen)
         }
         remaining -= card.value;
       }
@@ -343,7 +342,7 @@ function processPayment(
     if (idx !== -1) { const [card] = debtor.bank.splice(idx, 1); creditor.bank.push(card); }
   }
 
-  // Property cards: debtor.properties → creditor.properties (or bank if creditor's set is full)
+  // Property cards: debtor.properties → creditor.properties (always goes to property, never bank)
   for (const { color, cardId } of propertyCards) {
     const debtorSet = debtor.properties.find(p => p.color === color);
     if (!debtorSet) continue;
@@ -355,11 +354,10 @@ function processPayment(
     if (!debtorSet.isComplete) { debtorSet.hasHouse = false; debtorSet.hasHotel = false; }
     card.color = color; // keep card.color in sync with set
     const creditorSet = creditor.properties.find(p => p.color === color);
-    if (creditorSet && !creditorSet.isComplete) {
+    if (creditorSet) {
       creditorSet.cards.push(card); creditorSet.isComplete = checkPropertySetComplete(creditorSet);
     } else {
-      // Creditor's set is complete or missing — bank card as cash (spec §6)
-      creditor.bank.push(card);
+      creditor.bank.push(card); // no matching set (shouldn't happen)
     }
   }
 }
