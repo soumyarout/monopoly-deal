@@ -25,7 +25,7 @@ app.use(express.static(path.join(__dirname, '../dist')));
 app.use(express.json());
 
 /* ─── Admin auth middleware ─── */
-const ADMIN_KEY = process.env.ADMIN_KEY || 'monopoly-admin-2026';
+const ADMIN_KEY = process.env.ADMIN_KEY || '4m65go4KNM0WWcmEbNJHvOF67Yzxaijxu8FuL1E5rAA=';
 
 function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction): void {
   const key = (req.headers['x-admin-key'] as string | undefined) || (req.query['key'] as string | undefined);
