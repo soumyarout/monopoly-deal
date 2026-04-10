@@ -1887,9 +1887,12 @@ io.on('connection', (socket) => {
         if (!r.players[pidx].disconnected) return; // they reconnected
         r.players.splice(pidx, 1);
         disconnectTimers.delete(dtKey);
-        if (r.players.length === 0 || (r.players.length === 1 && r.players[0].isAI)) {
+        const hasHumans = r.players.some(p => !p.isAI);
+        if (!hasHumans) {
+          // No human players left — kill room (AI-only rooms serve no purpose)
           clearTurnTimer(roomId);
           rooms.delete(roomId);
+          console.log(`🗑️  Room ${roomId} auto-closed (no humans remaining)`);
         } else {
           io.to(roomId).emit('player-left', { player, room: r });
         }
