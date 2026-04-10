@@ -311,8 +311,15 @@ function aiPay(_room: GameRoom, debtor: Player, creditor: Player, amount: number
       while (set.cards.length > 0 && remaining > 0) {
         const card = set.cards.pop()!;
         set.isComplete = checkPropertySetComplete(set);
+        if (!set.isComplete) { set.hasHouse = false; set.hasHotel = false; }
+        card.color = set.color; // keep card.color in sync
         const cs = creditor.properties.find(p => p.color === set.color);
-        if (cs) { cs.cards.push(card); cs.isComplete = checkPropertySetComplete(cs); }
+        if (cs && !cs.isComplete) {
+          cs.cards.push(card); cs.isComplete = checkPropertySetComplete(cs);
+        } else {
+          // Creditor's matching set is complete or not found — bank card as cash
+          creditor.bank.push(card);
+        }
         remaining -= card.value;
       }
     }
@@ -330,20 +337,30 @@ function processPayment(
   const creditor = room.players.find(p => p.id === payment.creditorId);
   if (!debtor || !creditor) return;
 
+  // Bank cards: debtor.bank → creditor.bank
   for (const cardId of bankCardIds) {
     const idx = debtor.bank.findIndex(c => c.id === cardId);
     if (idx !== -1) { const [card] = debtor.bank.splice(idx, 1); creditor.bank.push(card); }
   }
+
+  // Property cards: debtor.properties → creditor.properties (or bank if creditor's set is full)
   for (const { color, cardId } of propertyCards) {
     const debtorSet = debtor.properties.find(p => p.color === color);
     if (!debtorSet) continue;
-    if (debtorSet.isComplete) continue; // complete sets are protected from debt payment
+    if (debtorSet.isComplete) continue; // complete sets protected
     const ci = debtorSet.cards.findIndex(c => c.id === cardId);
     if (ci === -1) continue;
     const [card] = debtorSet.cards.splice(ci, 1);
     debtorSet.isComplete = checkPropertySetComplete(debtorSet);
+    if (!debtorSet.isComplete) { debtorSet.hasHouse = false; debtorSet.hasHotel = false; }
+    card.color = color; // keep card.color in sync with set
     const creditorSet = creditor.properties.find(p => p.color === color);
-    if (creditorSet) { creditorSet.cards.push(card); creditorSet.isComplete = checkPropertySetComplete(creditorSet); }
+    if (creditorSet && !creditorSet.isComplete) {
+      creditorSet.cards.push(card); creditorSet.isComplete = checkPropertySetComplete(creditorSet);
+    } else {
+      // Creditor's set is complete or missing — bank card as cash (spec §6)
+      creditor.bank.push(card);
+    }
   }
 }
 
