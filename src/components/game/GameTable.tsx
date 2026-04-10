@@ -382,6 +382,11 @@ function WildcardMoveModal({ card, fromColor, players, currentPlayerId, onMove, 
         <div className="px-4 pb-4">
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Move to color group:</p>
           <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            {targets.length === 0 && (
+              <p className="text-sm text-gray-400 italic text-center py-3">
+                All valid sets are already complete — no valid destination.
+              </p>
+            )}
             {targets.map(color => {
               const existingSet = me?.properties.find(p => p.color === color);
               const count = existingSet?.cards.length ?? 0;

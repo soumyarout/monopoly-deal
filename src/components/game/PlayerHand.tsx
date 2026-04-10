@@ -364,7 +364,10 @@ function CardActionModal({ card, room, currentPlayerId, cardsPlayedThisTurn, max
                           {(card.colors.length >= 2 && card.colors[0] === card.colors[card.colors.length - 1]
                             ? (['brown','lightblue','pink','orange','red','yellow','green','blue','black','utility'] as PropertyColor[])
                             : card.colors
-                          ).map(c => (
+                          ).filter(c => {
+                            const mySet = me?.properties.find(p => p.color === c);
+                            return !mySet?.isComplete;
+                          }).map(c => (
                             <button key={c} onClick={() => { onPlay({ color: c }); onClose(); }}
                               className={cn('px-3 py-1 rounded-lg text-xs font-bold text-white', getColorClass(c))}>
                               {getColorDisplayName(c)}
