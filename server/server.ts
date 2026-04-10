@@ -432,7 +432,8 @@ function aiBestColorForWild(player: Player, card: Card): PropertyColor {
     const set = player.properties.find(p => p.color === col);
     return !set?.isComplete;
   });
-  const candidates = openColors.length > 0 ? openColors : validColors;
+  if (openColors.length === 0) return card.color as PropertyColor; // no valid placement available
+  const candidates = openColors;
 
   let bestCol = candidates[0];
   let bestScore = -1;
@@ -490,9 +491,10 @@ function processBeginnerAITurn(room: GameRoom, roomId: string, player: Player): 
         card.color = color;
         const set = player.properties.find(p => p.color === color);
         if (set && !set.isComplete) { set.cards.push(card); set.isComplete = checkPropertySetComplete(set); }
-        else { player.bank.push(card); }
+        else { player.hand.push(card); continue; } // set somehow full — keep in hand, skip play
       } else {
-        player.bank.push(card); // all matching sets are complete — bank as cash
+        player.hand.push(card); // all matching sets are complete — keep in hand, skip play
+        continue;
       }
     } else if (card.type === 'cash') {
       player.bank.push(card);
@@ -778,7 +780,7 @@ function processAITurn(room: GameRoom, player: Player): void {
         chosenCard.color = color;
         const set = player.properties.find(p => p.color === color);
         if (set && !set.isComplete) { set.cards.push(chosenCard); set.isComplete = checkPropertySetComplete(set); }
-        else { player.bank.push(chosenCard); } // target set full — bank as cash
+        else { player.hand.push(chosenCard); break; } // target set full — keep in hand, stop planning
       }
     } else if (chosenCard.type === 'cash') {
       player.bank.push(chosenCard);
