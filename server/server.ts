@@ -314,7 +314,7 @@ function requestPayments(
 }
 
 /** Auto-pay debt for AI: bank first (smallest), then incomplete properties only — complete sets are protected. */
-function aiPay(_room: GameRoom, debtor: Player, creditor: Player, amount: number): void {
+function aiPay(room: GameRoom, debtor: Player, creditor: Player, amount: number): void {
   let remaining = amount;
   const bankSorted = [...debtor.bank].sort((a, b) => a.value - b.value);
   for (const card of bankSorted) {
@@ -334,7 +334,8 @@ function aiPay(_room: GameRoom, debtor: Player, creditor: Player, amount: number
         if (cs) {
           cs.cards.push(card); cs.isComplete = checkPropertySetComplete(cs);
         } else {
-          creditor.bank.push(card); // no matching set (shouldn't happen)
+          // Creditor has no slot for this color — create one (should never happen with createEmptyPropertySets)
+          creditor.properties.push({ color: set.color, cards: [card], hasHouse: false, hasHotel: false, isComplete: false });
         }
         remaining -= card.value;
       }
@@ -374,7 +375,8 @@ function processPayment(
     if (creditorSet) {
       creditorSet.cards.push(card); creditorSet.isComplete = checkPropertySetComplete(creditorSet);
     } else {
-      creditor.bank.push(card); // no matching set (shouldn't happen)
+      // No slot found — create one (safety net; should not happen after createEmptyPropertySets)
+      creditor.properties.push({ color, cards: [card], hasHouse: false, hasHotel: false, isComplete: false });
     }
   }
 }
@@ -385,7 +387,7 @@ function processPayment(
  * Rearrange multi-color wildcards to the set where they contribute most
  * to completion. Free action (spec §9.3).
  */
-function aiRearrangeWildcards(player: Player): void {
+function aiRearrangeWildcards(room: GameRoom, player: Player): void {
   for (const set of player.properties) {
     for (let i = set.cards.length - 1; i >= 0; i--) {
       const card = set.cards[i];
@@ -602,7 +604,7 @@ function processAITurn(room: GameRoom, player: Player): void {
   }
 
   // Medium / Advanced: strategic play
-  aiRearrangeWildcards(player);
+  aiRearrangeWildcards(room, player);
 
   // All opponents treated equally — no leader targeting of any kind
   const others = room.players.filter(p => p.id !== player.id);
