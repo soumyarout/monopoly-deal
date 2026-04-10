@@ -266,7 +266,7 @@ export function generateDeck(version: GameVersion): Card[] {
     deck.push({
       ...prop,
       id: `card-${id++}`,
-      type: 'property',
+      type: 'wild',
     } as Card);
   });
 
