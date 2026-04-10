@@ -79,11 +79,12 @@ export function useSocket(): [SocketState, SocketActions] {
     const serverUrl = isDevelopment ? 'http://localhost:3000' : window.location.origin;
 
     const socket = io(serverUrl, {
-      transports: ['websocket', 'polling'],
+      transports: ['websocket'],   // WebSocket-only: avoids polling→WS upgrade disconnect
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
-      timeout: 10000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
     });
     socketRef.current = socket;
 

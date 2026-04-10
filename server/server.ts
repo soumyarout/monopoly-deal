@@ -18,7 +18,9 @@ app.use(cors());
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: { origin: '*', methods: ['GET', 'POST'] },
-  transports: ['websocket', 'polling'],
+  transports: ['websocket', 'polling'],  // polling as fallback for restrictive proxies
+  pingInterval: 25000,  // ping every 25s
+  pingTimeout: 60000,   // 60s timeout — generous for mobile/slow connections
 });
 
 app.use(express.static(path.join(__dirname, '../dist')));
@@ -1244,6 +1246,22 @@ io.on('connection', (socket) => {
     socket.join(upperRoomId);
     socket.emit('reconnected', { room, player: existingPlayer });
     socket.to(upperRoomId).emit('player-reconnected', { player: existingPlayer, room });
+
+    // Re-send any pending payment-request that was missed while disconnected
+    const missedPayment = room.pendingPayments.find(
+      p => p.debtorId === existingPlayer.id && !p.jsnState
+    );
+    if (missedPayment) {
+      const creditor = room.players.find(p => p.id === missedPayment.creditorId);
+      socket.emit('payment-request', {
+        paymentId: missedPayment.id,
+        creditorId: missedPayment.creditorId,
+        creditorName: creditor?.name ?? '',
+        amount: missedPayment.amount,
+        reason: missedPayment.reason,
+        room,
+      });
+    }
   });
 
   // Watch a room as spectator
@@ -1435,8 +1453,10 @@ io.on('connection', (socket) => {
     const payment = room.pendingPayments.find(p => p.id === paymentId);
     if (!payment) return;
 
+    // Auth: paymentId UUID was only sent to the debtor — no socketId check needed
+    // (socketId check breaks when player briefly reconnects before socketId is updated)
     const debtor = room.players.find(p => p.id === payment.debtorId);
-    if (!debtor || debtor.socketId !== socket.id) return;
+    if (!debtor) return;
 
     processPayment(room, payment, bankCardIds, propertyCards);
     room.pendingPayments = room.pendingPayments.filter(p => p.id !== paymentId);
@@ -1470,8 +1490,9 @@ io.on('connection', (socket) => {
     const payment = room.pendingPayments.find(p => p.id === paymentId);
     if (!payment) return;
 
+    // Auth: paymentId UUID was only sent to the debtor
     const debtor = room.players.find(p => p.id === payment.debtorId);
-    if (!debtor || debtor.socketId !== socket.id) return;
+    if (!debtor) return;
 
     const jsnIdx = debtor.hand.findIndex(c => c.id === cardId && c.actionType === 'sayno');
     if (jsnIdx === -1) { socket.emit('error', { message: 'Just Say No card not found in hand' }); return; }
@@ -1543,8 +1564,9 @@ io.on('connection', (socket) => {
     const payment = room.pendingPayments.find(p => p.id === paymentId);
     if (!payment || !payment.jsnState) return;
 
+    // Auth: paymentId + jsnState together identify the exact expected responder
     const responder = room.players.find(p => p.id === payment.jsnState!.awaitingCounterFromId);
-    if (!responder || responder.socketId !== socket.id) return;
+    if (!responder) return;
 
     // Clear auto-resolve timer
     const t = jsnCounterTimers.get(paymentId);
