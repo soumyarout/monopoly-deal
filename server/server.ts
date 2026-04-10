@@ -225,10 +225,18 @@ function createEmptyPropertySets(): PropertySet[] {
 }
 
 function dealInitialCards(room: GameRoom): void {
+  // Initialise empty hands and property sets
   room.players.forEach(player => {
-    player.hand = safeDraw(room, 5);
+    player.hand = [];
     player.properties = createEmptyPropertySets();
   });
+  // Deal round-robin (1 card per player per round × 5 rounds) — same as a real dealer
+  for (let round = 0; round < 5; round++) {
+    for (const player of room.players) {
+      const [card] = safeDraw(room, 1);
+      if (card) player.hand.push(card);
+    }
+  }
 }
 
 function checkPropertySetComplete(set: PropertySet): boolean {
@@ -248,7 +256,8 @@ function safeDraw(room: GameRoom, count: number): Card[] {
   for (let i = 0; i < count; i++) {
     if (room.deck.length === 0) {
       if (room.discardPile.length === 0) break;
-      room.deck = shuffleDeck([...room.discardPile]);
+      // Shuffle twice for thorough randomisation
+      room.deck = shuffleDeck(shuffleDeck([...room.discardPile]));
       room.discardPile = [];
     }
     if (room.deck.length > 0) drawn.push(room.deck.splice(0, 1)[0]);
@@ -587,9 +596,9 @@ function processAITurn(room: GameRoom, player: Player): void {
   // Medium / Advanced: strategic play
   aiRearrangeWildcards(player);
 
-  // Advanced: identify the leading opponent to target
+  // Advanced: 75% of the time target the leading opponent; 25% pick randomly (less predictable)
   const others = room.players.filter(p => p.id !== player.id);
-  const leader = skill === 'advanced'
+  const leader = (skill === 'advanced' && Math.random() > 0.25)
     ? others.reduce((best, p) =>
         p.properties.filter(s => s.isComplete).length >= best.properties.filter(s => s.isComplete).length ? p : best
       , others[0] ?? null)
@@ -622,8 +631,8 @@ function processAITurn(room: GameRoom, player: Player): void {
       }
     }
 
-    // 2. Deal Breaker (advanced: step 2; medium: step 3)
-    if (!chosenCard && (skill === 'advanced')) {
+    // 2. Deal Breaker (advanced: step 2, 80% chance; medium: step 3)
+    if (!chosenCard && skill === 'advanced' && Math.random() > 0.2) {
       const db = acts.find(c => c.actionType === 'dealbreaker');
       if (db) {
         const targets = leader ? [leader, ...others.filter(p => p.id !== leader.id)] : others;
