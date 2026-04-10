@@ -320,7 +320,18 @@ function aiPay(room: GameRoom, debtor: Player, creditor: Player, amount: number)
   for (const card of bankSorted) {
     if (remaining <= 0) break;
     const idx = debtor.bank.findIndex(c => c.id === card.id);
-    if (idx !== -1) { debtor.bank.splice(idx, 1); creditor.bank.push(card); remaining -= card.value; }
+    if (idx !== -1) {
+      debtor.bank.splice(idx, 1);
+      // Property/wild cards route to creditor's properties, never their cash bank
+      if ((card.type === 'property' || card.type === 'wild') && card.color) {
+        const cs = creditor.properties.find(p => p.color === card.color as PropertyColor);
+        if (cs) { cs.cards.push(card); cs.isComplete = checkPropertySetComplete(cs); }
+        else { creditor.properties.push({ color: card.color as PropertyColor, cards: [card], hasHouse: false, hasHotel: false, isComplete: false }); }
+      } else {
+        creditor.bank.push(card);
+      }
+      remaining -= card.value;
+    }
   }
   if (remaining > 0) {
     // Only pay from incomplete sets — complete sets are protected (same rule as human payment)
@@ -354,10 +365,21 @@ function processPayment(
   const creditor = room.players.find(p => p.id === payment.creditorId);
   if (!debtor || !creditor) return;
 
-  // Bank cards: debtor.bank → creditor.bank
+  // Bank cards: cash/action → creditor.bank; property/wild → creditor.properties (never cash)
   for (const cardId of bankCardIds) {
     const idx = debtor.bank.findIndex(c => c.id === cardId);
-    if (idx !== -1) { const [card] = debtor.bank.splice(idx, 1); creditor.bank.push(card); }
+    if (idx === -1) continue;
+    const [card] = debtor.bank.splice(idx, 1);
+    if ((card.type === 'property' || card.type === 'wild') && card.color) {
+      const creditorSet = creditor.properties.find(p => p.color === card.color as PropertyColor);
+      if (creditorSet) {
+        creditorSet.cards.push(card); creditorSet.isComplete = checkPropertySetComplete(creditorSet);
+      } else {
+        creditor.properties.push({ color: card.color as PropertyColor, cards: [card], hasHouse: false, hasHotel: false, isComplete: false });
+      }
+    } else {
+      creditor.bank.push(card);
+    }
   }
 
   // Property cards: debtor.properties → creditor.properties (always goes to property, never bank)
