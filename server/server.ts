@@ -596,13 +596,8 @@ function processAITurn(room: GameRoom, player: Player): void {
   // Medium / Advanced: strategic play
   aiRearrangeWildcards(player);
 
-  // Advanced: 75% of the time target the leading opponent; 25% pick randomly (less predictable)
+  // All opponents treated equally — no leader targeting of any kind
   const others = room.players.filter(p => p.id !== player.id);
-  const leader = (skill === 'advanced' && Math.random() > 0.25)
-    ? others.reduce((best, p) =>
-        p.properties.filter(s => s.isComplete).length >= best.properties.filter(s => s.isComplete).length ? p : best
-      , others[0] ?? null)
-    : null;
 
   let played = 0;
   while (played < 3 && player.hand.length > 0) {
@@ -631,12 +626,12 @@ function processAITurn(room: GameRoom, player: Player): void {
       }
     }
 
-    // 2. Deal Breaker (advanced: step 2, 80% chance; medium: step 3)
-    if (!chosenCard && skill === 'advanced' && Math.random() > 0.2) {
+    // 2. Deal Breaker (advanced: step 2; medium: step 4) — random opponent order
+    if (!chosenCard && skill === 'advanced') {
       const db = acts.find(c => c.actionType === 'dealbreaker');
       if (db) {
-        const targets = leader ? [leader, ...others.filter(p => p.id !== leader.id)] : others;
-        for (const opp of targets) {
+        const randomOthers = [...others].sort(() => Math.random() - 0.5);
+        for (const opp of randomOthers) {
           for (const set of opp.properties.filter(s => s.isComplete)) {
             const mySet = player.properties.find(p => p.color === set.color);
             if (!mySet?.isComplete) {
@@ -670,16 +665,13 @@ function processAITurn(room: GameRoom, player: Player): void {
       }
     }
 
-    // 5. Sly Deal — steal a card that helps complete our set
+    // 5. Sly Deal — steal a card that helps complete our set (random target order)
     if (!chosenCard) {
       const sly = acts.find(c => c.actionType === 'slydeal');
       if (sly) {
-        // Advanced: prefer targeting the leader
-        const targetList = (skill === 'advanced' && leader)
-          ? [leader, ...others.filter(p => p.id !== leader.id)]
-          : others;
+        const randomOthers = [...others].sort(() => Math.random() - 0.5);
         let bestOpp: Player | null = null, bestColor: PropertyColor | null = null, bestCardId: string | null = null, bestScore = -1;
-        for (const opp of targetList) {
+        for (const opp of randomOthers) {
           for (const set of opp.properties.filter(s => !s.isComplete && s.cards.length > 0)) {
             for (const c of set.cards) {
               const mySet = player.properties.find(p => p.color === set.color);
@@ -710,7 +702,7 @@ function processAITurn(room: GameRoom, player: Player): void {
       if (color) { chosenCard = best; chosenTarget = { color }; }
     }
 
-    // 7. Birthday / Debt Collector — advanced targets the leader
+    // 7. Birthday / Debt Collector — targets richest opponent (fair, no leader bias)
     if (!chosenCard) {
       const bday = acts.find(c => c.actionType === 'birthday');
       if (bday && others.some(p => p.bank.length > 0 || p.properties.some(s => s.cards.length > 0))) {
@@ -720,10 +712,8 @@ function processAITurn(room: GameRoom, player: Player): void {
     if (!chosenCard) {
       const dc = acts.find(c => c.actionType === 'debtcollector');
       if (dc && others.length > 0) {
-        const target = (skill === 'advanced' && leader)
-          ? leader
-          : others.reduce((b, p) =>
-              p.bank.reduce((s, c) => s + c.value, 0) > b.bank.reduce((s, c) => s + c.value, 0) ? p : b, others[0]);
+        const target = others.reduce((b, p) =>
+          p.bank.reduce((s, c) => s + c.value, 0) > b.bank.reduce((s, c) => s + c.value, 0) ? p : b, others[0]);
         chosenCard = dc; chosenTarget = { targetPlayerId: target.id };
       }
     }
