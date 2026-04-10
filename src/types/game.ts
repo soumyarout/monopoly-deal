@@ -101,8 +101,10 @@ export interface GameRoom {
   pendingPayments: PendingPayment[];
   pendingActions: PendingAction[];
   doubleRentActive: boolean; // Double the Rent card played this turn
-  turnTimeLimit: number;     // seconds per turn; 0 = no limit
-  turnStartedAt: number;     // ms timestamp when the current turn began
+  turnTimeLimit: number;          // seconds per turn; 0 = no limit
+  turnStartedAt: number;          // ms timestamp when the current turn began
+  timerPaused?: boolean;          // true while waiting for human payments
+  turnElapsedBeforePause?: number;// seconds elapsed before the most recent pause
   aiSkillLevel: AISkillLevel; // skill level for AI players in this room
 }
 

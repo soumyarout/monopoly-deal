@@ -84,43 +84,43 @@ const ukProperties: Partial<Card>[] = [
   { name: 'Water Works', color: 'utility', value: 2 },
 ];
 
-// India Version Properties
+// India Version Properties — multi-city across Mumbai, Bangalore, Kolkata, Bhubaneswar, Lucknow
 const indiaProperties: Partial<Card>[] = [
-  // Brown properties (2)
-  { name: 'Mumbai Central', color: 'brown', value: 1 },
-  { name: 'Andheri', color: 'brown', value: 1 },
-  // Light Blue properties (3)
-  { name: 'Bandra', color: 'lightblue', value: 1 },
-  { name: 'Juhu', color: 'lightblue', value: 1 },
-  { name: 'Versova', color: 'lightblue', value: 1 },
-  // Pink properties (3)
-  { name: 'Colaba', color: 'pink', value: 2 },
-  { name: 'Churchgate', color: 'pink', value: 2 },
-  { name: 'Marine Lines', color: 'pink', value: 2 },
-  // Orange properties (3)
+  // Brown (2) — Bhubaneswar
+  { name: 'Sahid Nagar', color: 'brown', value: 1 },
+  { name: 'Janpath', color: 'brown', value: 1 },
+  // Light Blue (3) — Lucknow
+  { name: 'Hazratganj', color: 'lightblue', value: 1 },
+  { name: 'Charbagh', color: 'lightblue', value: 1 },
+  { name: 'Aminabad', color: 'lightblue', value: 1 },
+  // Pink (3) — Kolkata
+  { name: 'Park Street', color: 'pink', value: 2 },
+  { name: 'Salt Lake', color: 'pink', value: 2 },
+  { name: 'New Town', color: 'pink', value: 2 },
+  // Orange (3) — Mumbai
   { name: 'Dadar', color: 'orange', value: 2 },
   { name: 'Parel', color: 'orange', value: 2 },
   { name: 'Worli', color: 'orange', value: 2 },
-  // Red properties (3)
+  // Red (3) — Mumbai Premium
   { name: 'Breach Candy', color: 'red', value: 3 },
   { name: 'Malabar Hill', color: 'red', value: 3 },
   { name: 'Cuffe Parade', color: 'red', value: 3 },
-  // Yellow properties (3)
-  { name: 'Powai', color: 'yellow', value: 3 },
-  { name: 'Goregaon', color: 'yellow', value: 3 },
-  { name: 'Borivali', color: 'yellow', value: 3 },
-  // Green properties (3)
-  { name: 'Thane', color: 'green', value: 4 },
-  { name: 'Kalyan', color: 'green', value: 4 },
-  { name: 'Navi Mumbai', color: 'green', value: 4 },
-  // Blue properties (2)
-  { name: 'South Mumbai', color: 'blue', value: 4 },
+  // Yellow (3) — Bangalore
+  { name: 'Koramangala', color: 'yellow', value: 3 },
+  { name: 'Indiranagar', color: 'yellow', value: 3 },
+  { name: 'Whitefield', color: 'yellow', value: 3 },
+  // Green (3) — Bangalore Premium
+  { name: 'MG Road', color: 'green', value: 4 },
+  { name: 'UB City', color: 'green', value: 4 },
+  { name: 'Lavelle Road', color: 'green', value: 4 },
+  // Blue (2) — Multi-city Premium
+  { name: 'Connaught Place', color: 'blue', value: 4 },
   { name: 'Nariman Point', color: 'blue', value: 4 },
-  // Railroads (4)
-  { name: 'Western Line', color: 'black', value: 2 },
-  { name: 'Central Line', color: 'black', value: 2 },
-  { name: 'Harbour Line', color: 'black', value: 2 },
-  { name: 'Metro Line', color: 'black', value: 2 },
+  // Railroads (4) — Indian Express Trains
+  { name: 'Rajdhani Express', color: 'black', value: 2 },
+  { name: 'Shatabdi Express', color: 'black', value: 2 },
+  { name: 'Duronto Express', color: 'black', value: 2 },
+  { name: 'Metro Rail', color: 'black', value: 2 },
   // Utilities (2)
   { name: 'Power Grid', color: 'utility', value: 2 },
   { name: 'Water Supply', color: 'utility', value: 2 },

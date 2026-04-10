@@ -3,6 +3,7 @@ import type { Card, Player, PropertySet, GameVersion, PropertyColor } from '@/ty
 import { PROPERTY_SET_RENT, PROPERTY_SET_REQUIREMENTS } from '@/types/game';
 import { CardComponent } from '@/components/cards/Card';
 import { getColorClass, getColorDisplayName, getPropertyNamesByColor } from '@/data/cards';
+import { useCurrencyFmt } from '@/context/CurrencyContext';
 import { cn } from '@/lib/utils';
 import { Bot, Crown, X, Wallet, Home } from 'lucide-react';
 
@@ -10,13 +11,17 @@ const ALL_COLORS: PropertyColor[] = [
   'brown', 'lightblue', 'pink', 'orange', 'red', 'yellow', 'green', 'blue', 'black', 'utility',
 ];
 
-/** Returns valid target colors when moving a wildcard. */
-function validTargetColors(card: Card, fromColor: PropertyColor): PropertyColor[] {
+/** Returns valid target colors when moving a wildcard (excludes the source set and complete sets). */
+function validTargetColors(card: Card, fromColor: PropertyColor, playerProperties: { color: PropertyColor; isComplete: boolean }[]): PropertyColor[] {
   // Universal wildcard: both entries in colors[] are the same color (our data convention)
   const isUniversal = card.colors && card.colors.length >= 2
     && card.colors[0] === card.colors[card.colors.length - 1];
   const pool = isUniversal ? ALL_COLORS : (card.colors ?? []);
-  return pool.filter(c => c !== fromColor);
+  return pool.filter(c => {
+    if (c === fromColor) return false;
+    const set = playerProperties.find(s => s.color === c);
+    return !set?.isComplete; // cannot move into an already-complete set
+  });
 }
 
 interface GameTableProps {
@@ -152,6 +157,7 @@ export function GameTable({ players, currentPlayerId, activePlayerId, version, i
 
 /* ─── Opponent compact card ─── */
 function OpponentCard({ player, index, isActive, onClick }: { player: Player; index: number; isActive: boolean; onClick: () => void }) {
+  const fmt = useCurrencyFmt();
   const totalBankValue = player.bank.reduce((sum, c) => sum + c.value, 0);
   const totalProperties = player.properties.reduce((sum, s) => sum + s.cards.length, 0);
   const completeSets = player.properties.filter(s => s.isComplete).length;
@@ -178,7 +184,7 @@ function OpponentCard({ player, index, isActive, onClick }: { player: Player; in
             {isActive && <span className="text-[8px] font-bold text-yellow-400 animate-pulse flex-shrink-0">TURN</span>}
           </div>
           <div className="flex items-center gap-1 mt-0.5">
-            <span className="text-green-400 text-[9px]">${totalBankValue}M</span>
+            <span className="text-green-400 text-[9px]">{fmt(`$${totalBankValue}M`)}</span>
             <span className="text-white/30 text-[9px]">·</span>
             <span className="text-blue-300 text-[9px]">{totalProperties} props</span>
             {completeSets > 0 && (
@@ -216,6 +222,7 @@ interface MyPlayerAreaProps {
 }
 
 function MyPlayerArea({ player, onSetClick, canMoveWildcard, onWildcardClick }: MyPlayerAreaProps) {
+  const fmt = useCurrencyFmt();
   const totalBankValue = player.bank.reduce((sum, c) => sum + c.value, 0);
   const hasProperties = player.properties.some(s => s.cards.length > 0);
   const completeSets = player.properties.filter(s => s.isComplete).length;
@@ -255,7 +262,7 @@ function MyPlayerArea({ player, onSetClick, canMoveWildcard, onWildcardClick }: 
         <div className="flex items-center gap-1.5 mb-2">
           <Wallet className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
           <span className="text-[10px] font-bold text-white/60 uppercase tracking-wider">Cash</span>
-          <span className="ml-auto text-[10px] font-bold text-green-400">${totalBankValue}M</span>
+          <span className="ml-auto text-[10px] font-bold text-green-400">{fmt(`$${totalBankValue}M`)}</span>
         </div>
         <div className="flex flex-wrap gap-1">
           {player.bank.map((card, idx) => <CardComponent key={idx} card={card} size="sm" />)}
@@ -345,8 +352,9 @@ interface WildcardMoveModalProps {
 }
 
 function WildcardMoveModal({ card, fromColor, players, currentPlayerId, onMove, onClose }: WildcardMoveModalProps) {
-  const targets = validTargetColors(card, fromColor);
+  const fmt = useCurrencyFmt();
   const me = players.find(p => p.id === currentPlayerId);
+  const targets = validTargetColors(card, fromColor, me?.properties ?? []);
 
   return (
     <div className="fixed inset-0 bg-black/75 z-[60] flex items-center justify-center p-4" onClick={onClose}>
@@ -402,7 +410,7 @@ function WildcardMoveModal({ card, fromColor, players, currentPlayerId, onMove, 
 
                   {/* Rent after move */}
                   <div className="text-right flex-shrink-0">
-                    <p className="text-sm font-bold text-green-600">${newRent}M</p>
+                    <p className="text-sm font-bold text-green-600">{fmt(`$${newRent}M`)}</p>
                     <p className="text-[9px] text-gray-400">rent</p>
                   </div>
                 </button>
@@ -423,6 +431,7 @@ interface OpponentModalProps {
 }
 
 function OpponentModal({ player, onClose, onSetClick }: OpponentModalProps) {
+  const fmt = useCurrencyFmt();
   const totalBankValue = player.bank.reduce((sum, c) => sum + c.value, 0);
   const totalProperties = player.properties.reduce((sum, s) => sum + s.cards.length, 0);
   const completeSets = player.properties.filter(s => s.isComplete).length;
@@ -438,7 +447,7 @@ function OpponentModal({ player, onClose, onSetClick }: OpponentModalProps) {
             <div>
               <p className="font-bold text-gray-900">{player.name}</p>
               <div className="flex items-center gap-3 text-xs text-gray-500">
-                <span className="flex items-center gap-1"><Wallet className="w-3 h-3 text-green-500" /> ${totalBankValue}M bank</span>
+                <span className="flex items-center gap-1"><Wallet className="w-3 h-3 text-green-500" /> {fmt(`$${totalBankValue}M`)} bank</span>
                 <span className="flex items-center gap-1"><Home className="w-3 h-3 text-blue-500" /> {totalProperties} properties</span>
                 {completeSets > 0 && <span className="flex items-center gap-1 text-yellow-600 font-semibold"><Crown className="w-3 h-3" /> {completeSets} complete</span>}
               </div>
@@ -487,7 +496,7 @@ function OpponentModal({ player, onClose, onSetClick }: OpponentModalProps) {
             <div className="flex items-center gap-2 mb-2.5">
               <Wallet className="w-4 h-4 text-green-500" />
               <p className="text-sm font-bold text-gray-700">Cash</p>
-              <span className="ml-auto text-sm font-bold text-green-600">${totalBankValue}M</span>
+              <span className="ml-auto text-sm font-bold text-green-600">{fmt(`$${totalBankValue}M`)}</span>
             </div>
             {player.bank.length > 0
               ? <div className="flex flex-wrap gap-1.5">{player.bank.map((c, i) => <CardComponent key={i} card={c} size="sm" />)}</div>
@@ -507,6 +516,7 @@ interface PropertyInfoModalProps {
 }
 
 function PropertyInfoModal({ propertySet, version, onClose }: PropertyInfoModalProps) {
+  const fmt = useCurrencyFmt();
   const { color } = propertySet;
   const rentTable = PROPERTY_SET_RENT[color];
   const required = PROPERTY_SET_REQUIREMENTS[color];
@@ -534,7 +544,7 @@ function PropertyInfoModal({ propertySet, version, onClose }: PropertyInfoModalP
             </button>
           </div>
           <p className="text-sm opacity-90">{owned} of {required} card{required !== 1 ? 's' : ''} owned</p>
-          {owned > 0 && <p className="text-sm font-bold mt-0.5">Current rent: ${currentRent}M</p>}
+          {owned > 0 && <p className="text-sm font-bold mt-0.5">Current rent: {fmt(`$${currentRent}M`)}</p>}
         </div>
 
         <div className="px-4 pt-3 pb-2 border-b border-gray-100">
@@ -579,7 +589,7 @@ function PropertyInfoModal({ propertySet, version, onClose }: PropertyInfoModalP
                     {count} card{count !== 1 ? 's' : ''}
                     {isFull && <span className={cn('ml-1 text-xs', isCurrent ? 'text-blue-500' : 'text-green-600')}>(full set)</span>}
                   </span>
-                  <span className={cn('font-bold tabular-nums', isCurrent ? 'text-blue-700' : 'text-gray-800')}>${rent}M</span>
+                  <span className={cn('font-bold tabular-nums', isCurrent ? 'text-blue-700' : 'text-gray-800')}>{fmt(`$${rent}M`)}</span>
                 </div>
               );
             })}
@@ -589,7 +599,7 @@ function PropertyInfoModal({ propertySet, version, onClose }: PropertyInfoModalP
                 🏠 + House
                 {!propertySet.hasHouse && !propertySet.isComplete && <span className="ml-1 text-xs text-gray-400">(need full set)</span>}
               </span>
-              <span className={cn('font-bold', propertySet.hasHouse ? 'text-amber-700' : 'text-gray-400')}>+$3M</span>
+              <span className={cn('font-bold', propertySet.hasHouse ? 'text-amber-700' : 'text-gray-400')}>{fmt('+$3M')}</span>
             </div>
             <div className={cn('flex items-center justify-between px-3 py-1.5 rounded-lg text-sm',
               propertySet.hasHotel ? 'bg-purple-50 border border-purple-200' : 'bg-gray-50 opacity-60')}>
@@ -597,7 +607,7 @@ function PropertyInfoModal({ propertySet, version, onClose }: PropertyInfoModalP
                 🏨 + Hotel
                 {!propertySet.hasHotel && !propertySet.hasHouse && <span className="ml-1 text-xs text-gray-400">(need house first)</span>}
               </span>
-              <span className={cn('font-bold', propertySet.hasHotel ? 'text-purple-700' : 'text-gray-400')}>+$4M</span>
+              <span className={cn('font-bold', propertySet.hasHotel ? 'text-purple-700' : 'text-gray-400')}>{fmt('+$4M')}</span>
             </div>
           </div>
         </div>
@@ -606,8 +616,10 @@ function PropertyInfoModal({ propertySet, version, onClose }: PropertyInfoModalP
   );
 }
 
-/* ─── Discard pile animated stack ─── */
+/* ─── Discard pile animated stack with recent history ─── */
 function DiscardPileDisplay({ discardPile }: { discardPile: Card[] }) {
+  const [showHistory, setShowHistory] = useState(false);
+
   if (discardPile.length === 0) {
     return (
       <div className="w-9 h-12 rounded-lg border-2 border-dashed border-white/20 flex items-center justify-center">
@@ -617,29 +629,62 @@ function DiscardPileDisplay({ discardPile }: { discardPile: Card[] }) {
   }
 
   const top = discardPile[discardPile.length - 1];
-  const stackSize = Math.min(discardPile.length - 1, 2);
-  const rotations = [-7, 6];
+  // Show up to 3 previous cards as shadow layers
+  const shadowCount = Math.min(discardPile.length - 1, 2);
+  const shadowRots = [-8, 7];
 
   return (
-    /* outer wrapper: fixed size, gentle sway */
-    <div style={{ position: 'relative', width: 36, height: 50, animation: 'discardSway 5s ease-in-out infinite' }}>
-      {/* card backs stacked behind */}
-      {Array.from({ length: stackSize }).map((_, i) => (
-        <div
-          key={i}
-          className="absolute inset-0 bg-gradient-to-br from-red-600 to-red-800 rounded-lg border border-yellow-400/30 shadow flex items-center justify-center"
-          style={{ transform: `rotate(${rotations[i]}deg)` }}
-        >
-          <span className="text-yellow-400 text-sm font-black">M</span>
-        </div>
-      ))}
-      {/* top card face-up, scaled to fit */}
-      <div className="absolute inset-0 rounded-lg overflow-hidden shadow-lg">
-        <div style={{ transform: 'scale(0.5)', transformOrigin: 'top left', width: 64, height: 96, pointerEvents: 'none' }}>
-          <CardComponent card={top} size="sm" />
+    <>
+      {/* clickable stack */}
+      <div
+        className="relative cursor-pointer"
+        style={{ width: 36, height: 50 }}
+        onClick={() => setShowHistory(true)}
+        title="Click to see discard history"
+      >
+        {Array.from({ length: shadowCount }).map((_, i) => (
+          <div
+            key={i}
+            className="absolute inset-0 bg-gradient-to-br from-red-600 to-red-800 rounded-lg border border-yellow-400/30 shadow flex items-center justify-center"
+            style={{ transform: `rotate(${shadowRots[i]}deg)` }}
+          >
+            <span className="text-yellow-400 text-sm font-black">M</span>
+          </div>
+        ))}
+        <div className="absolute inset-0 rounded-lg overflow-hidden shadow-lg hover:ring-2 hover:ring-white/40 transition-all">
+          <div style={{ transform: 'scale(0.5)', transformOrigin: 'top left', width: 72, height: 108, pointerEvents: 'none' }}>
+            <CardComponent card={top} size="sm" />
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* History modal — last 10 cards */}
+      {showHistory && (
+        <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4" onClick={() => setShowHistory(false)}>
+          <div className="bg-slate-900 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+              <p className="text-white font-bold text-sm">Recent Discards</p>
+              <button onClick={() => setShowHistory(false)} className="text-white/50 hover:text-white text-xs">✕</button>
+            </div>
+            <div className="p-4">
+              <div className="flex flex-wrap gap-2 justify-center">
+                {[...discardPile].reverse().slice(0, 10).map((card, i) => (
+                  <div key={i} className="relative flex-shrink-0">
+                    <CardComponent card={card} size="sm" />
+                    {i === 0 && (
+                      <span className="absolute -top-1 -right-1 bg-yellow-400 text-black text-[8px] font-black rounded-full w-4 h-4 flex items-center justify-center">★</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {discardPile.length > 10 && (
+                <p className="text-center text-white/40 text-xs mt-3">+{discardPile.length - 10} more older cards</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

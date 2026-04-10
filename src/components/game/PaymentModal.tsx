@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Player, Card, PendingPayment, PropertyColor } from '@/types/game';
 import { CardComponent } from '@/components/cards/Card';
 import { getColorDisplayName, getColorClass } from '@/data/cards';
+import { useCurrencyFmt } from '@/context/CurrencyContext';
 import { cn } from '@/lib/utils';
 import { Wallet, Home, AlertTriangle, Ban, Lock, Eye, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,7 @@ const REASON_LABEL: Record<string, string> = {
 
 
 export function PaymentModal({ payment, myPlayer, creditorName, creditorPlayer, onPay, onJustSayNo }: PaymentModalProps) {
+  const fmt = useCurrencyFmt();
   const [selectedBankIds, setSelectedBankIds]     = useState<Set<string>>(new Set());
   const [selectedProps, setSelectedProps]         = useState<{ color: PropertyColor; cardId: string }[]>([]);
   const [showCreditor, setShowCreditor]           = useState(false);
@@ -79,14 +81,14 @@ export function PaymentModal({ payment, myPlayer, creditorName, creditorPlayer, 
                 {REASON_LABEL[payment.reason] ?? 'Payment Required'}
               </p>
               <p className="text-red-200 text-xs">
-                {creditorName} demands <span className="font-bold text-white">${payment.amount}M</span>
+                {creditorName} demands <span className="font-bold text-white">{fmt(`$${payment.amount}M`)}</span>
               </p>
             </div>
             <div className="text-right">
               <p className={cn('text-lg font-black', totalSelected >= payment.amount ? 'text-green-300' : 'text-white')}>
-                ${totalSelected}M
+                {fmt(`$${totalSelected}M`)}
               </p>
-              <p className="text-red-200 text-xs">of ${payment.amount}M</p>
+              <p className="text-red-200 text-xs">of {fmt(`$${payment.amount}M`)}</p>
             </div>
           </div>
 
@@ -120,7 +122,7 @@ export function PaymentModal({ payment, myPlayer, creditorName, creditorPlayer, 
                 <div className="p-3 space-y-2 bg-white">
                   <div className="flex items-center gap-1 text-xs text-gray-500">
                     <Wallet className="w-3 h-3" />
-                    <span>Bank: <strong>${creditorPlayer.bank.reduce((s, c) => s + c.value, 0)}M</strong></span>
+                    <span>Bank: <strong>{fmt(`$${creditorPlayer.bank.reduce((s, c) => s + c.value, 0)}M`)}</strong></span>
                   </div>
                   {creditorPlayer.properties.some(s => s.cards.length > 0) && (
                     <div className="space-y-1">
@@ -141,7 +143,7 @@ export function PaymentModal({ payment, myPlayer, creditorName, creditorPlayer, 
 
           {!hasAnyCards && (
             <p className="text-center text-gray-500 italic py-4">
-              You have nothing to pay with — confirm to pay $0.
+              You have nothing to pay with — confirm to pay {fmt('$0')}.
             </p>
           )}
 
@@ -234,7 +236,7 @@ export function PaymentModal({ payment, myPlayer, creditorName, creditorPlayer, 
             )}
           >
             {hasAnyCards
-              ? `Pay $${totalSelected}M${totalSelected < payment.amount ? ` (short $${payment.amount - totalSelected}M)` : ''}`
+              ? fmt(`Pay $${totalSelected}M${totalSelected < payment.amount ? ` (short $${payment.amount - totalSelected}M)` : ''}`)
               : 'Confirm (nothing to pay)'}
           </Button>
         </div>

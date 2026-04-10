@@ -1,5 +1,6 @@
 import type { Card as CardType, PropertyColor } from '@/types/game';
-import { getColorClass, getColorDisplayName } from '@/data/cards';
+import { PROPERTY_SET_RENT } from '@/types/game';
+import { useCurrency } from '@/context/CurrencyContext';
 import { cn } from '@/lib/utils';
 
 interface CardProps {
@@ -11,73 +12,538 @@ interface CardProps {
   showBack?: boolean;
 }
 
-const colorIcons: Record<PropertyColor, string> = {
-  brown: '🏚️',
-  lightblue: '🏠',
-  pink: '🏩',
-  orange: '🏭',
-  red: '🏢',
-  yellow: '🏨',
-  green: '🏦',
-  blue: '🏰',
-  black: '🚂',
-  utility: '💡',
+/* ─── Color palettes ─── */
+const PROP_COLOR: Record<PropertyColor, { banner: string; text: string }> = {
+  brown:     { banner: '#92400e', text: '#fff' },
+  lightblue: { banner: '#0ea5e9', text: '#fff' },
+  pink:      { banner: '#db2777', text: '#fff' },
+  orange:    { banner: '#f97316', text: '#fff' },
+  red:       { banner: '#dc2626', text: '#fff' },
+  yellow:    { banner: '#ca8a04', text: '#fff' },
+  green:     { banner: '#16a34a', text: '#fff' },
+  blue:      { banner: '#1d4ed8', text: '#fff' },
+  black:     { banner: '#1f2937', text: '#fff' },
+  utility:   { banner: '#4d7c0f', text: '#fff' },
 };
 
-const actionIcons: Record<string, string> = {
-  dealbreaker: '💥',
+const CASH_PAL: Record<number, { bg: string }> = {
+  1:  { bg: '#f59e0b' },
+  2:  { bg: '#38bdf8' },
+  3:  { bg: '#4ade80' },
+  4:  { bg: '#f87171' },
+  5:  { bg: '#c084fc' },
+  10: { bg: '#f97316' },
+};
+
+const ACTION_BG: Record<string, string> = {
+  dealbreaker:   '#7c3aed',
+  debtcollector: '#059669',
+  forceddeal:    '#1d4ed8',
+  slydeal:       '#be185d',
+  birthday:      '#f472b6',
+  passgo:        '#f1f5f9',
+  house:         '#38bdf8',
+  hotel:         '#f97316',
+  sayno:         '#dc2626',
+  doublerent:    '#0891b2',
+};
+
+const ACTION_LABEL: Record<string, string> = {
+  dealbreaker:   'DEAL BREAKER',
+  debtcollector: 'DEBT COLLECTOR',
+  forceddeal:    'FORCED DEAL',
+  slydeal:       'SLY DEAL',
+  birthday:      "IT'S MY BIRTHDAY",
+  passgo:        'PASS GO',
+  house:         'HOUSE',
+  hotel:         'HOTEL',
+  sayno:         'JUST SAY NO',
+  doublerent:    'DOUBLE THE RENT',
+};
+
+const ACTION_ICON: Record<string, string> = {
+  dealbreaker:   '💥',
   debtcollector: '💰',
-  forceddeal: '🔄',
-  slydeal: '🥷',
-  birthday: '🎂',
-  passgo: '🎫',
-  house: '🏠',
-  hotel: '🏨',
-  sayno: '🚫',
-  rent: '💵',
+  forceddeal:    '🔄',
+  slydeal:       '🥷',
+  birthday:      '🎂',
+  passgo:        '→',
+  house:         '🏠',
+  hotel:         '🏨',
+  sayno:         '✋',
+  doublerent:    '×2',
 };
 
-export function CardComponent({ 
-  card, 
-  onClick, 
-  isSelectable = false, 
-  isSelected = false,
-  size = 'md',
-  showBack = false
-}: CardProps) {
-  const sizeClasses = {
-    sm: 'w-16 h-24 text-[8px]',
-    md: 'w-24 h-36 text-[10px]',
-    lg: 'w-32 h-48 text-xs',
-  };
+const ALL_COLORS: PropertyColor[] = ['brown','lightblue','pink','orange','red','yellow','green','blue','black','utility'];
 
-  if (showBack) {
-    return (
-      <div 
-        className={cn(
-          sizeClasses[size],
-          'rounded-lg shadow-lg cursor-pointer transition-transform hover:scale-105',
-          'bg-gradient-to-br from-red-700 via-red-600 to-red-800',
-          'border-2 border-yellow-400 flex items-center justify-center'
+/* ─── Shared sub-components ─── */
+
+/** Circular currency+value badge */
+function MBadge({ value, sz }: { value: number; sz: 'sm' | 'md' | 'lg' }) {
+  const cur = useCurrency();
+  const dim = sz === 'sm' ? 13 : sz === 'lg' ? 22 : 17;
+  const fs  = sz === 'sm' ? 5.5 : sz === 'lg' ? 8.5 : 7;
+  return (
+    <div style={{
+      width: dim, height: dim, borderRadius: '50%',
+      background: 'white', border: '1.5px solid #9ca3af',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontWeight: 900, fontSize: fs, color: '#111', flexShrink: 0, lineHeight: 1,
+    }}>
+      {cur}{value}
+    </div>
+  );
+}
+
+/** Mini stacked card icons for rent table */
+function PropStack({ count, color, sz }: { count: number; color: string; sz: 'sm' | 'md' | 'lg' }) {
+  const isSm = sz === 'sm';
+  const w = isSm ? 8 : 11, h = isSm ? 11 : 15, gap = isSm ? 1.5 : 2;
+  const svgW = w + gap * (count - 1);
+  const svgH = h + gap * (count - 1);
+  return (
+    <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} style={{ display: 'block', flexShrink: 0 }}>
+      {Array.from({ length: count }).map((_, i) => {
+        const x = i * gap, y = (count - 1 - i) * gap;
+        return (
+          <g key={i}>
+            <rect x={x} y={y} width={w} height={h} rx={1} fill={color} stroke="white" strokeWidth={0.8} />
+            {/* mini colored header stripe */}
+            <rect x={x} y={y} width={w} height={h * 0.3} rx={0.5} fill="rgba(0,0,0,0.28)" />
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+/* ─── Card variants ─── */
+
+function PropertyCard({ card, sz }: { card: CardType; sz: 'sm' | 'md' | 'lg' }) {
+  const cur    = useCurrency();
+  const color  = (card.color || 'brown') as PropertyColor;
+  const isWild = card.isDualColor || (!!card.colors && card.colors.length > 0);
+  if (isWild) return <WildPropertyCard card={card} sz={sz} />;
+
+  const pal     = PROP_COLOR[color];
+  const rentArr = PROPERTY_SET_RENT[color];
+  const isSm    = sz === 'sm';
+  const isLg    = sz === 'lg';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'white' }}>
+
+      {/* ── Colored banner ── */}
+      <div style={{
+        background: pal.banner,
+        minHeight: isSm ? 22 : isLg ? 38 : 28,
+        display: 'flex', alignItems: 'center',
+        padding: isSm ? '2px 3px' : '3px 5px', gap: isSm ? 2 : 3,
+      }}>
+        <MBadge value={card.value} sz={sz} />
+        <div style={{
+          color: pal.text, fontWeight: 900,
+          fontSize: isSm ? 5.5 : isLg ? 9.5 : 7,
+          lineHeight: 1.1, flex: 1, textAlign: 'center',
+          overflow: 'hidden', textOverflow: 'ellipsis',
+          whiteSpace: isSm ? 'nowrap' : 'normal',
+          wordBreak: 'break-word', letterSpacing: '0.01em',
+        }}>
+          {card.name.toUpperCase()}
+        </div>
+      </div>
+
+      {/* ── Rent table ── */}
+      <div style={{
+        flex: 1, display: 'flex', flexDirection: 'column',
+        padding: isSm ? '2px 3px' : '2px 4px',
+      }}>
+        {/* Column headers */}
+        {!isSm && (
+          <div style={{
+            display: 'flex', justifyContent: 'space-between',
+            fontSize: 4.5, color: '#9ca3af', fontWeight: 700,
+            textTransform: 'uppercase', letterSpacing: '0.04em',
+            paddingBottom: 1.5, borderBottom: '0.5px solid #e5e7eb',
+            marginBottom: 1,
+          }}>
+            <span>PROPERTIES OWNED</span>
+            <span>RENT</span>
+          </div>
         )}
-        onClick={onClick}
-      >
-        <div className="text-yellow-400 font-bold text-lg">M</div>
+
+        {/* Rent rows */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-evenly' }}>
+          {rentArr.map((rent, i) => {
+            const isLast = i === rentArr.length - 1;
+            return (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center',
+                justifyContent: 'space-between',
+                borderTop: isLast && !isSm ? '0.5px solid #e5e7eb' : undefined,
+                paddingTop: isLast && !isSm ? 2 : 0,
+              }}>
+                <PropStack count={i + 1} color={pal.banner} sz={sz} />
+                <div style={{ fontWeight: 900, fontSize: isSm ? 7.5 : isLg ? 12 : 9.5, color: '#111' }}>
+                  {cur}{rent}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Complete set label */}
+        {!isSm && (
+          <div style={{
+            fontSize: 5, color: pal.banner, fontWeight: 800,
+            textAlign: 'center', letterSpacing: '0.04em', paddingBottom: 1.5,
+          }}>
+            COMPLETE SET
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WildPropertyCard({ card, sz }: { card: CardType; sz: 'sm' | 'md' | 'lg' }) {
+  const colors      = card.colors || [card.color || 'brown'];
+  const uniqueColors = [...new Set(colors)];
+  const isUniversal  = uniqueColors.length > 2;
+  const isSm         = sz === 'sm';
+  const isLg         = sz === 'lg';
+
+  /* Universal (rainbow) wildcard */
+  if (isUniversal) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div style={{
+          background: 'linear-gradient(90deg,#7c3aed,#db2777,#f97316)',
+          padding: isSm ? '2px 3px' : '3px 5px',
+          display: 'flex', alignItems: 'center', gap: 2,
+          minHeight: isSm ? 22 : 28,
+        }}>
+          <MBadge value={card.value} sz={sz} />
+          <div style={{ color: 'white', fontWeight: 900, fontSize: isSm ? 5 : isLg ? 9 : 6.5, flex: 1, textAlign: 'center' }}>
+            WILD PROPERTY
+          </div>
+        </div>
+        <div style={{
+          flex: 1, background: '#f5f3ff',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px',
+        }}>
+          {!isSm && (
+            <div style={{ color: '#6b21a8', fontWeight: 700, fontSize: 6, textAlign: 'center', letterSpacing: '0.04em' }}>
+              CHOOSE ONE COLOUR
+            </div>
+          )}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center', maxWidth: isSm ? 50 : 70 }}>
+            {ALL_COLORS.map(c => (
+              <div key={c} style={{
+                width: isSm ? 7 : 9, height: isSm ? 7 : 9,
+                borderRadius: '50%', background: PROP_COLOR[c].banner, border: '1px solid white',
+              }} />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
 
-  const renderCardContent = () => {
+  /* Dual-color wildcard — top half + bottom half rotated */
+  const c1   = uniqueColors[0] as PropertyColor;
+  const c2   = uniqueColors[1] as PropertyColor;
+  const pal1 = PROP_COLOR[c1];
+  const pal2 = PROP_COLOR[c2];
+  const halfStyle = (pal: typeof pal1): React.CSSProperties => ({
+    flex: 1, background: pal.banner,
+    display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center', padding: '3px 2px',
+  });
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Top half */}
+      <div style={halfStyle(pal1)}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 2 }}>
+          <MBadge value={card.value} sz={sz} />
+          <div style={{ color: pal1.text, fontWeight: 900, fontSize: isSm ? 5.5 : isLg ? 8.5 : 7 }}>WILD</div>
+        </div>
+        <div style={{ color: pal1.text, fontWeight: 900, fontSize: isSm ? 14 : isLg ? 22 : 18, lineHeight: 1 }}>↑</div>
+        {!isSm && (
+          <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 5, fontWeight: 700, letterSpacing: '0.04em', marginTop: 1 }}>
+            {c1.toUpperCase()}
+          </div>
+        )}
+      </div>
+
+      {/* Divider */}
+      <div style={{ height: 2, background: 'white', flexShrink: 0 }} />
+
+      {/* Bottom half — rotated 180° so it reads from the other end */}
+      <div style={{ ...halfStyle(pal2), transform: 'rotate(180deg)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 2 }}>
+          <MBadge value={card.value} sz={sz} />
+          <div style={{ color: pal2.text, fontWeight: 900, fontSize: isSm ? 5.5 : isLg ? 8.5 : 7 }}>WILD</div>
+        </div>
+        <div style={{ color: pal2.text, fontWeight: 900, fontSize: isSm ? 14 : isLg ? 22 : 18, lineHeight: 1 }}>↑</div>
+        {!isSm && (
+          <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 5, fontWeight: 700, letterSpacing: '0.04em', marginTop: 1 }}>
+            {c2.toUpperCase()}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CashCard({ card, sz }: { card: CardType; sz: 'sm' | 'md' | 'lg' }) {
+  const cur  = useCurrency();
+  const v    = card.value;
+  const bg   = (CASH_PAL[v] ?? CASH_PAL[1]).bg;
+  const isSm = sz === 'sm';
+  const isLg = sz === 'lg';
+
+  return (
+    <div style={{ height: '100%', background: bg, display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+
+      {/* Watermark number */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: isSm ? 56 : isLg ? 104 : 76,
+        fontWeight: 900, color: 'rgba(255,255,255,0.15)',
+        letterSpacing: '-0.05em', userSelect: 'none', pointerEvents: 'none',
+      }}>{v}</div>
+
+      {/* Top badges */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between',
+        padding: isSm ? '2px 3px' : '3px 5px',
+        position: 'relative', zIndex: 1,
+      }}>
+        <MBadge value={v} sz={sz} />
+        <MBadge value={v} sz={sz} />
+      </div>
+
+      {/* Center denomination */}
+      <div style={{
+        flex: 1, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        position: 'relative', zIndex: 1,
+      }}>
+        <div style={{
+          fontWeight: 900, color: 'white',
+          fontSize: isSm ? 9 : isLg ? 18 : 13,
+          lineHeight: 1, letterSpacing: '-0.02em',
+        }}>{cur}</div>
+        <div style={{
+          fontWeight: 900, color: 'white',
+          fontSize: isSm ? 22 : isLg ? 52 : 36,
+          lineHeight: 1, letterSpacing: '-0.03em',
+        }}>{v}</div>
+      </div>
+
+      {/* Bottom: MONOPOLY + badge */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: isSm ? '2px 3px' : '3px 5px',
+        position: 'relative', zIndex: 1,
+      }}>
+        <div style={{
+          fontWeight: 900, fontSize: isSm ? 4.5 : isLg ? 7 : 6,
+          color: 'white', letterSpacing: '0.12em', opacity: 0.9,
+        }}>MONOPOLY</div>
+        <MBadge value={v} sz={sz} />
+      </div>
+    </div>
+  );
+}
+
+function ActionCard({ card, sz }: { card: CardType; sz: 'sm' | 'md' | 'lg' }) {
+  const cur       = useCurrency();
+  const key       = card.actionType || '';
+  const bg        = ACTION_BG[key] ?? '#6b7280';
+  const label     = ACTION_LABEL[key] ?? card.name.toUpperCase();
+  const icon      = ACTION_ICON[key] ?? '🎯';
+  const isLightBg = key === 'passgo';
+  const textColor = isLightBg ? '#111827' : 'white';
+  const isSm      = sz === 'sm';
+  const isLg      = sz === 'lg';
+
+  return (
+    <div style={{ height: '100%', background: bg, display: 'flex', flexDirection: 'column' }}>
+
+      {/* Header */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 3,
+        padding: isSm ? '2px 3px' : '3px 5px',
+      }}>
+        <MBadge value={card.value} sz={sz} />
+        <div style={{
+          color: textColor, fontWeight: 700, opacity: 0.85,
+          fontSize: isSm ? 5 : isLg ? 7.5 : 6.5, letterSpacing: '0.1em',
+        }}>ACTION</div>
+      </div>
+
+      {/* Body: circle icon + name + description */}
+      <div style={{
+        flex: 1, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        padding: isSm ? '1px 2px 2px' : '2px 4px 4px', gap: isSm ? 2 : 3,
+      }}>
+        {/* Icon circle */}
+        <div style={{
+          width:  isSm ? 26 : isLg ? 54 : 38,
+          height: isSm ? 26 : isLg ? 54 : 38,
+          borderRadius: '50%',
+          background: 'rgba(255,255,255,0.22)',
+          border: '2px solid rgba(255,255,255,0.45)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: isSm ? 13 : isLg ? 28 : 20,
+        }}>
+          {icon}
+        </div>
+
+        {/* Card name */}
+        <div style={{
+          color: textColor, fontWeight: 900, textAlign: 'center',
+          fontSize: isSm ? 5.5 : isLg ? 10 : 7.5,
+          lineHeight: 1.15, letterSpacing: '0.02em',
+        }}>{label}</div>
+
+        {/* Description */}
+        {!isSm && card.description && (
+          <div style={{
+            color: textColor, opacity: 0.82, textAlign: 'center',
+            fontSize: isLg ? 7.5 : 5.5, lineHeight: 1.25, padding: '0 1px',
+          }}>{card.description?.replace(/\$/g, cur)}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RentCard({ card, sz }: { card: CardType; sz: 'sm' | 'md' | 'lg' }) {
+  const isWild = !card.rentColors || card.rentColors.length === 0;
+  const isSm   = sz === 'sm';
+  const isLg   = sz === 'lg';
+
+  /* Wild rent — purple gradient, all colour dots */
+  if (isWild) {
+    return (
+      <div style={{
+        height: '100%',
+        background: 'linear-gradient(135deg,#6d28d9,#4c1d95)',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3, padding: isSm ? '2px 3px' : '3px 5px' }}>
+          <MBadge value={card.value} sz={sz} />
+          <div style={{ color: 'white', fontWeight: 700, fontSize: isSm ? 5 : 6.5, letterSpacing: '0.1em', opacity: 0.85 }}>
+            RENT
+          </div>
+        </div>
+        <div style={{
+          flex: 1, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 3, padding: '2px',
+        }}>
+          <div style={{ color: 'white', fontWeight: 900, fontSize: isSm ? 7 : isLg ? 12 : 9.5, letterSpacing: '0.05em' }}>
+            WILD RENT
+          </div>
+          <div style={{
+            display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center',
+            maxWidth: isSm ? 50 : 74,
+          }}>
+            {ALL_COLORS.map(c => (
+              <div key={c} style={{
+                width: isSm ? 7 : 9, height: isSm ? 7 : 9,
+                borderRadius: '50%', background: PROP_COLOR[c].banner,
+                border: '1px solid rgba(255,255,255,0.45)',
+              }} />
+            ))}
+          </div>
+          {!isSm && (
+            <div style={{ color: 'rgba(255,255,255,0.72)', fontWeight: 700, fontSize: 6, letterSpacing: '0.06em' }}>
+              ANY COLOR
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  /* Standard dual-color rent card */
+  const c1   = card.rentColors![0] as PropertyColor;
+  const c2   = card.rentColors![1] as PropertyColor;
+  const pal1 = PROP_COLOR[c1];
+  const pal2 = PROP_COLOR[c2];
+
+  const halfContent = (pal: typeof pal1, colorKey: PropertyColor) => (
+    <div style={{
+      flex: 1, background: pal.banner,
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', padding: '3px 2px', gap: 2,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <MBadge value={card.value} sz={sz} />
+        <div style={{ color: pal.text, fontWeight: 900, fontSize: isSm ? 5 : isLg ? 8 : 6.5, letterSpacing: '0.08em' }}>
+          RENT
+        </div>
+      </div>
+      {!isSm && (
+        <div style={{ color: 'rgba(255,255,255,0.8)', fontWeight: 700, fontSize: 5, letterSpacing: '0.06em' }}>
+          {colorKey.toUpperCase()}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {halfContent(pal1, c1)}
+      <div style={{ height: 2, background: 'white', flexShrink: 0 }} />
+      <div style={{ flex: 1, transform: 'rotate(180deg)', display: 'flex', flexDirection: 'column' }}>
+        {halfContent(pal2, c2)}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Main export ─── */
+export function CardComponent({
+  card,
+  onClick,
+  isSelectable = false,
+  isSelected = false,
+  size = 'md',
+  showBack = false,
+}: CardProps) {
+  const sizeClass = size === 'sm' ? 'w-16 h-24' : size === 'lg' ? 'w-32 h-48' : 'w-24 h-36';
+
+  if (showBack) {
+    return (
+      <div
+        className={cn(sizeClass, 'rounded-lg shadow-lg cursor-pointer transition-transform hover:scale-105 flex items-center justify-center border-2 border-yellow-400/30')}
+        style={{ background: 'linear-gradient(135deg,#166534,#15803d)' }}
+        onClick={onClick}
+      >
+        <div style={{ fontWeight: 900, fontSize: size === 'sm' ? 18 : 26, color: '#fbbf24' }}>M</div>
+      </div>
+    );
+  }
+
+  const renderContent = () => {
     switch (card.type) {
       case 'property':
       case 'wild':
-        return <PropertyCard card={card} size={size} />;
+        return <PropertyCard card={card} sz={size} />;
       case 'cash':
-        return <CashCard card={card} size={size} />;
+        return <CashCard card={card} sz={size} />;
       case 'action':
-        return <ActionCard card={card} size={size} />;
+        return <ActionCard card={card} sz={size} />;
       case 'rent':
-        return <RentCard card={card} size={size} />;
+        return <RentCard card={card} sz={size} />;
       default:
         return null;
     }
@@ -86,248 +552,18 @@ export function CardComponent({
   return (
     <div
       className={cn(
-        sizeClasses[size],
-        'rounded-lg shadow-md cursor-pointer transition-all duration-200',
-        'border-2 flex flex-col overflow-hidden',
-        isSelectable && 'hover:shadow-xl hover:-translate-y-1',
-        isSelected && 'ring-2 ring-blue-500 ring-offset-2 scale-105',
-        'bg-white'
+        sizeClass,
+        'rounded-lg shadow-md cursor-pointer transition-all duration-200 overflow-hidden border-2',
+        isSelectable && 'hover:shadow-xl hover:-translate-y-1.5',
+        isSelected
+          ? 'border-blue-500 ring-2 ring-blue-400 ring-offset-1 scale-105 shadow-blue-300/40 shadow-lg'
+          : 'border-gray-200',
       )}
+      style={{ flexShrink: 0 }}
       onClick={onClick}
     >
-      {renderCardContent()}
+      {renderContent()}
     </div>
-  );
-}
-
-function PropertyCard({ card, size }: { card: CardType; size: string }) {
-  const color = card.color || 'brown';
-  const isWildcard = card.isDualColor || card.colors;
-  const colors = card.colors || [color];
-
-  return (
-    <>
-      {/* Header with color */}
-      <div className={cn(
-        'w-full px-1 py-0.5 flex items-center justify-between',
-        getColorClass(color),
-        color === 'yellow' || color === 'lightblue' ? 'text-black' : 'text-white'
-      )}>
-        <span className="font-bold truncate">{size === 'sm' ? '' : getColorDisplayName(color)}</span>
-        <span className="text-lg">{colorIcons[color]}</span>
-      </div>
-
-      {/* Card body */}
-      <div className="flex-1 flex flex-col items-center justify-center p-1 bg-white">
-        {/* Property name */}
-        <div className="text-center font-bold text-gray-800 leading-tight mb-1">
-          {card.name}
-        </div>
-
-        {/* Wildcard indicator */}
-        {isWildcard && colors.length === 2 && (
-          <div className="flex gap-0.5 mt-1">
-            <div className={cn('w-4 h-4 rounded-full', getColorClass(colors[0]))} />
-            <div className={cn('w-4 h-4 rounded-full', getColorClass(colors[1]))} />
-          </div>
-        )}
-
-        {/* Property icon */}
-        <div className="text-2xl mt-1">{colorIcons[color]}</div>
-      </div>
-
-      {/* Footer with value */}
-      <div className="w-full bg-gray-100 px-1 py-0.5 flex items-center justify-between border-t">
-        <span className="font-bold text-gray-700">${card.value}M</span>
-        {card.isDualColor && <span className="text-[8px] text-gray-500">WILD</span>}
-      </div>
-    </>
-  );
-}
-
-function CashCard({ card, size }: { card: CardType; size: string }) {
-  const value = card.value;
-  let bgColor = 'bg-yellow-100';
-  let borderColor = 'border-yellow-300';
-  
-  if (value >= 10) {
-    bgColor = 'bg-purple-100';
-    borderColor = 'border-purple-300';
-  } else if (value >= 5) {
-    bgColor = 'bg-green-100';
-    borderColor = 'border-green-300';
-  } else if (value >= 3) {
-    bgColor = 'bg-blue-100';
-    borderColor = 'border-blue-300';
-  } else if (value >= 2) {
-    bgColor = 'bg-orange-100';
-    borderColor = 'border-orange-300';
-  }
-
-  return (
-    <>
-      <div className={cn('w-full h-full flex flex-col', bgColor)}>
-        {/* Top value */}
-        <div className="px-1 py-0.5 flex justify-between items-center">
-          <span className="font-bold text-gray-700">${value}M</span>
-        </div>
-
-        {/* Center - Large value */}
-        <div className="flex-1 flex items-center justify-center">
-          <div className={cn(
-            'rounded-full flex items-center justify-center font-bold text-gray-800',
-            size === 'sm' ? 'w-10 h-10 text-sm' : size === 'md' ? 'w-14 h-14 text-lg' : 'w-20 h-20 text-2xl',
-            'bg-white border-2',
-            borderColor
-          )}>
-            ${value}M
-          </div>
-        </div>
-
-        {/* Bottom value */}
-        <div className="px-1 py-0.5 flex justify-end">
-          <span className="font-bold text-gray-700">${value}M</span>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function ActionCard({ card, size }: { card: CardType; size: string }) {
-  const icon = actionIcons[card.actionType || ''] || '🎯';
-  
-  // Different colors for different action types
-  const actionColors: Record<string, { bg: string; border: string; header: string }> = {
-    dealbreaker: { bg: 'bg-red-50', border: 'border-red-300', header: 'bg-red-500' },
-    debtcollector: { bg: 'bg-green-50', border: 'border-green-300', header: 'bg-green-500' },
-    forceddeal: { bg: 'bg-blue-50', border: 'border-blue-300', header: 'bg-blue-500' },
-    slydeal: { bg: 'bg-purple-50', border: 'border-purple-300', header: 'bg-purple-500' },
-    birthday: { bg: 'bg-pink-50', border: 'border-pink-300', header: 'bg-pink-500' },
-    passgo: { bg: 'bg-yellow-50', border: 'border-yellow-300', header: 'bg-yellow-500' },
-    house: { bg: 'bg-amber-50', border: 'border-amber-300', header: 'bg-amber-500' },
-    hotel: { bg: 'bg-indigo-50', border: 'border-indigo-300', header: 'bg-indigo-500' },
-    sayno: { bg: 'bg-rose-50', border: 'border-rose-300', header: 'bg-rose-500' },
-  };
-
-  const colors = actionColors[card.actionType || ''] || { bg: 'bg-gray-50', border: 'border-gray-300', header: 'bg-gray-500' };
-
-  return (
-    <>
-      {/* Header */}
-      <div className={cn('w-full px-1 py-0.5 text-white font-bold text-center', colors.header)}>
-        ACTION
-      </div>
-
-      {/* Body */}
-      <div className={cn('flex-1 flex flex-col items-center justify-center p-1', colors.bg)}>
-        {/* Large icon */}
-        <div className={cn(
-          'mb-1',
-          size === 'sm' ? 'text-2xl' : size === 'md' ? 'text-3xl' : 'text-4xl'
-        )}>
-          {icon}
-        </div>
-
-        {/* Action name */}
-        <div className="text-center font-bold text-gray-800 leading-tight text-[9px]">
-          {card.name}
-        </div>
-
-        {/* Description */}
-        {size !== 'sm' && (
-          <div className="text-center text-[7px] text-gray-600 mt-1 leading-tight px-0.5">
-            {card.description}
-          </div>
-        )}
-      </div>
-
-      {/* Footer */}
-      <div className="w-full bg-gray-100 px-1 py-0.5 flex items-center justify-between border-t">
-        <span className="font-bold text-gray-700">${card.value}M</span>
-        <span className="text-[8px] text-gray-500">ACTION</span>
-      </div>
-    </>
-  );
-}
-
-const ALL_COLORS: PropertyColor[] = ['brown','lightblue','pink','orange','red','yellow','green','blue','black','utility'];
-
-function RentCard({ card, size }: { card: CardType; size: string }) {
-  const icon = actionIcons.rent;
-  const isWildRent = !card.rentColors || card.rentColors.length === 0;
-  const rentColors = isWildRent ? ALL_COLORS : card.rentColors!;
-
-  if (isWildRent) {
-    return (
-      <>
-        {/* Wild Rent header */}
-        <div className="w-full px-1 py-0.5 bg-gradient-to-r from-purple-600 to-purple-800 text-white font-bold text-center text-[9px]">
-          WILD RENT
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 flex flex-col items-center justify-center p-1 bg-purple-50">
-          <div className={cn('mb-0.5', size === 'sm' ? 'text-xl' : size === 'md' ? 'text-2xl' : 'text-3xl')}>
-            {icon}
-          </div>
-          {/* All 10 color dots in 2 rows */}
-          <div className="flex flex-wrap justify-center gap-0.5 mb-0.5" style={{ maxWidth: '60px' }}>
-            {ALL_COLORS.map((color) => (
-              <div key={color} className={cn('w-3 h-3 rounded-full border border-white shadow-sm', getColorClass(color))} />
-            ))}
-          </div>
-          {size !== 'sm' && (
-            <div className="text-[7px] text-purple-700 font-bold text-center leading-tight">ANY COLOR</div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="w-full bg-purple-100 px-1 py-0.5 flex items-center justify-between border-t border-purple-200">
-          <span className="font-bold text-purple-800">${card.value}M</span>
-          <span className="text-[8px] text-purple-600 font-bold">WILD</span>
-        </div>
-      </>
-    );
-  }
-
-  return (
-    <>
-      {/* Header */}
-      <div className="w-full px-1 py-0.5 bg-gradient-to-r from-gray-700 to-gray-900 text-white font-bold text-center">
-        RENT
-      </div>
-
-      {/* Body */}
-      <div className="flex-1 flex flex-col items-center justify-center p-1 bg-gray-50">
-        {/* Large icon */}
-        <div className={cn(
-          'mb-1',
-          size === 'sm' ? 'text-2xl' : size === 'md' ? 'text-3xl' : 'text-4xl'
-        )}>
-          {icon}
-        </div>
-
-        {/* Color indicators */}
-        <div className="flex gap-1 mb-1">
-          {rentColors.map((color, idx) => (
-            <div key={idx} className={cn('w-5 h-5 rounded border-2 border-white shadow-sm', getColorClass(color))} />
-          ))}
-        </div>
-
-        {/* Description */}
-        {size !== 'sm' && (
-          <div className="text-center text-[7px] text-gray-600 leading-tight px-0.5">
-            {card.description}
-          </div>
-        )}
-      </div>
-
-      {/* Footer */}
-      <div className="w-full bg-gray-100 px-1 py-0.5 flex items-center justify-between border-t">
-        <span className="font-bold text-gray-700">${card.value}M</span>
-        <span className="text-[8px] text-gray-500">RENT</span>
-      </div>
-    </>
   );
 }
 

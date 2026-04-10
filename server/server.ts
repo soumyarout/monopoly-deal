@@ -22,6 +22,83 @@ const io = new Server(httpServer, {
 });
 
 app.use(express.static(path.join(__dirname, '../dist')));
+app.use(express.json());
+
+/* ─── Admin auth middleware ─── */
+const ADMIN_KEY = process.env.ADMIN_KEY || 'monopoly-admin-2026';
+
+function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  const key = (req.headers['x-admin-key'] as string | undefined) || (req.query['key'] as string | undefined);
+  if (key !== ADMIN_KEY) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  next();
+}
+
+/* ─── Admin REST routes ─── */
+app.get('/api/admin/stats', requireAdmin, (_req, res) => {
+  const roomList = [...rooms.entries()].map(([id, room]) => {
+    const ageMs   = Date.now() - room.createdAt;
+    const ageMins = Math.floor(ageMs / 60000);
+    const activePlayer = room.players[room.currentPlayerIndex];
+    return {
+      id,
+      phase:            room.phase,
+      version:          room.version,
+      mode:             room.mode ?? 'multi',
+      createdAt:        room.createdAt,
+      ageMinutes:       ageMins,
+      turnTimeLimit:    room.turnTimeLimit,
+      timerPaused:      room.timerPaused ?? false,
+      pendingPayments:  room.pendingPayments.length,
+      pendingActions:   room.pendingActions.length,
+      deckRemaining:    room.deck.length,
+      discardCount:     room.discardPile.length,
+      winner:           room.winner ? room.winner.name : null,
+      activePlayerName: activePlayer ? activePlayer.name : null,
+      players: room.players.map(p => ({
+        id:           p.id,
+        name:         p.name,
+        isAI:         p.isAI ?? false,
+        aiSkill:      p.aiSkill ?? null,
+        isHost:       p.isHost,
+        disconnected: p.disconnected ?? false,
+        handCount:    p.hand.length,
+        bankTotal:    p.bank.reduce((s, c) => s + c.value, 0),
+        propertySets: p.properties.filter(ps => ps.cards.length > 0).length,
+        completeSets: p.properties.filter(ps => ps.isComplete).length,
+      })),
+      spectatorCount: room.spectators.length,
+    };
+  });
+
+  res.json({
+    serverTime:   Date.now(),
+    totalRooms:   rooms.size,
+    playingRooms: roomList.filter(r => r.phase === 'playing').length,
+    lobbyRooms:   roomList.filter(r => r.phase === 'lobby').length,
+    endedRooms:   roomList.filter(r => r.phase === 'ended').length,
+    totalPlayers: roomList.reduce((s, r) => s + r.players.length, 0),
+    rooms: roomList,
+  });
+});
+
+app.delete('/api/admin/rooms/:id', requireAdmin, (req, res) => {
+  const roomId = req.params.id;
+  if (!rooms.has(roomId)) {
+    res.status(404).json({ error: 'Room not found' });
+    return;
+  }
+  io.to(roomId).emit('error', { message: 'This room was closed by the administrator.' });
+  // Disconnect all sockets from this room
+  io.in(roomId).socketsLeave(roomId);
+  rooms.delete(roomId);
+  const timer = turnTimers.get(roomId);
+  if (timer) { clearTimeout(timer); turnTimers.delete(roomId); }
+  res.json({ success: true, roomId });
+});
+
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', rooms: rooms.size }));
 app.use((_req, res) => res.sendFile(path.join(__dirname, '../dist/index.html')));
 
@@ -35,6 +112,13 @@ const actionTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
 const jsnCounterTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
 const AI_NAMES = ['Carlos', 'Bentley', 'Ferrari', 'Lambert', 'Royce', 'Maybach', 'Aston', 'Jaguar'];
+
+function pickAIName(existingPlayers: Player[]): string {
+  const usedNames = existingPlayers.filter(p => p.isAI).map(p => p.name.replace(' (AI)', ''));
+  const available = AI_NAMES.filter(n => !usedNames.includes(n));
+  const pool = available.length > 0 ? available : AI_NAMES;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
 
 // ─── Turn Timer ──────────────────────────────────────────────────────────────
 
@@ -72,6 +156,48 @@ function startTurnTimer(roomId: string, room: GameRoom) {
     advanceTurn(r, roomId);
   }, room.turnTimeLimit * 1000);
 
+  turnTimers.set(roomId, timer);
+}
+
+/** Pause the turn timer when human players are paying rent/debt. */
+function pauseTurnTimer(roomId: string, room: GameRoom): void {
+  if (!room.turnTimeLimit || room.timerPaused) return;
+  clearTurnTimer(roomId);
+  const elapsed = Math.floor((Date.now() - room.turnStartedAt) / 1000);
+  room.turnElapsedBeforePause = (room.turnElapsedBeforePause ?? 0) + elapsed;
+  room.timerPaused = true;
+}
+
+/** Resume the turn timer after all payments are collected. */
+function resumeTurnTimer(roomId: string, room: GameRoom): void {
+  if (!room.turnTimeLimit || !room.timerPaused) return;
+  room.timerPaused = false;
+  const elapsed = room.turnElapsedBeforePause ?? 0;
+  // Shift turnStartedAt so the client countdown still reflects remaining time
+  room.turnStartedAt = Date.now() - elapsed * 1000;
+  room.turnElapsedBeforePause = 0;
+
+  const remaining = Math.max(1, room.turnTimeLimit - elapsed);
+  const timer = setTimeout(() => {
+    const r = rooms.get(roomId);
+    if (!r || r.phase !== 'playing' || r.pendingPayments.length > 0 || r.timerPaused) return;
+
+    const player = r.players[r.currentPlayerIndex];
+    if (!player) return;
+
+    if (r.turnPhase === 'draw') {
+      const count = player.hadZeroCardsAtEnd ? 5 : 2;
+      player.hadZeroCardsAtEnd = false;
+      player.hand.push(...safeDraw(r, count));
+      r.turnPhase = 'play';
+    }
+    while (player.hand.length > 7) {
+      const idx = Math.floor(Math.random() * player.hand.length);
+      r.discardPile.push(player.hand.splice(idx, 1)[0]);
+    }
+    io.to(roomId).emit('turn-timeout', { room: r });
+    advanceTurn(r, roomId);
+  }, remaining * 1000);
   turnTimers.set(roomId, timer);
 }
 
@@ -149,6 +275,7 @@ function requestPayments(
   creditor: Player, debtors: Player[],
   amount: number, reason: string,
 ): void {
+  let hasHumanDebtor = false;
   for (const debtor of debtors) {
     if (debtor.id === creditor.id) continue;
     const hasAnything = debtor.bank.length > 0 || debtor.properties.some(s => s.cards.length > 0);
@@ -160,8 +287,11 @@ function requestPayments(
       room.pendingPayments.push({ id: paymentId, creditorId: creditor.id, debtorId: debtor.id, amount, reason });
       // Notify the specific debtor
       io.to(roomId).emit('payment-request', { paymentId, creditorId: creditor.id, creditorName: creditor.name, amount, reason, room });
+      hasHumanDebtor = true;
     }
   }
+  // Pause the turn timer while human players are paying — resumes when all pay
+  if (hasHumanDebtor) pauseTurnTimer(roomId, room);
 }
 
 /** Auto-pay debt for AI: bank first (smallest), then incomplete properties only — complete sets are protected. */
@@ -261,9 +391,16 @@ function aiBestColorForWild(player: Player, card: Card): PropertyColor {
   if (validColors.length === 0) return card.color as PropertyColor;
   if (validColors.length === 1) return validColors[0];
 
-  let bestCol = validColors[0];
+  // Skip complete sets — wildcards cannot be added to a full set
+  const openColors = validColors.filter(col => {
+    const set = player.properties.find(p => p.color === col);
+    return !set?.isComplete;
+  });
+  const candidates = openColors.length > 0 ? openColors : validColors;
+
+  let bestCol = candidates[0];
   let bestScore = -1;
-  for (const col of validColors) {
+  for (const col of candidates) {
     const set = player.properties.find(p => p.color === col);
     const req = PROPERTY_SET_REQUIREMENTS[col] ?? 3;
     const cur = set?.cards.length ?? 0;
@@ -302,15 +439,24 @@ function processBeginnerAITurn(room: GameRoom, roomId: string, player: Player): 
     player.hand.splice(idx, 1);
 
     if (card.type === 'property' || card.type === 'wild') {
-      // Pick a random valid color instead of the strategically best one
+      // Pick a random valid color instead of the strategically best one (but skip complete sets)
       const validColors = card.colors?.length
         ? [...new Set(card.colors)] as PropertyColor[]
         : [card.color as PropertyColor];
-      const color = validColors[Math.floor(Math.random() * validColors.length)];
+      const openColors = validColors.filter(c => {
+        const s = player.properties.find(p => p.color === c);
+        return !s?.isComplete;
+      });
+      const color = openColors.length > 0
+        ? openColors[Math.floor(Math.random() * openColors.length)]
+        : null;
       if (color) {
         card.color = color;
         const set = player.properties.find(p => p.color === color);
-        if (set) { set.cards.push(card); set.isComplete = checkPropertySetComplete(set); }
+        if (set && !set.isComplete) { set.cards.push(card); set.isComplete = checkPropertySetComplete(set); }
+        else { player.bank.push(card); }
+      } else {
+        player.bank.push(card); // all matching sets are complete — bank as cash
       }
     } else if (card.type === 'cash') {
       player.bank.push(card);
@@ -605,7 +751,8 @@ function processAITurn(room: GameRoom, player: Player): void {
       if (color) {
         chosenCard.color = color;
         const set = player.properties.find(p => p.color === color);
-        if (set) { set.cards.push(chosenCard); set.isComplete = checkPropertySetComplete(set); }
+        if (set && !set.isComplete) { set.cards.push(chosenCard); set.isComplete = checkPropertySetComplete(set); }
+        else { player.bank.push(chosenCard); } // target set full — bank as cash
       }
     } else if (chosenCard.type === 'cash') {
       player.bank.push(chosenCard);
@@ -657,6 +804,8 @@ function advanceTurn(room: GameRoom, roomId: string) {
   player.cardsPlayedThisTurn = 0;
   player.hadZeroCardsAtEnd = player.hand.length === 0;
   room.doubleRentActive = false;
+  room.timerPaused = false;
+  room.turnElapsedBeforePause = 0;
   room.currentPlayerIndex = (room.currentPlayerIndex + 1) % room.players.length;
   room.turnPhase = 'draw';
   room.turnStartedAt = Date.now();
@@ -1010,7 +1159,7 @@ io.on('connection', (socket) => {
 
     if (mode === 'single' && aiCount) {
       for (let i = 0; i < aiCount; i++) {
-        roomPlayers.push(createPlayer(`${AI_NAMES[i % AI_NAMES.length]} (AI)`, `ai-${i}`, false, true, undefined, skill));
+        roomPlayers.push(createPlayer(`${pickAIName(roomPlayers)} (AI)`, `ai-${i}`, false, true, undefined, skill));
       }
     }
 
@@ -1023,6 +1172,8 @@ io.on('connection', (socket) => {
       pendingPayments: [], pendingActions: [], doubleRentActive: false,
       turnTimeLimit: turnTimeLimit ?? 60,
       turnStartedAt: 0,
+      timerPaused: false,
+      turnElapsedBeforePause: 0,
       aiSkillLevel: skill,
     };
 
@@ -1113,9 +1264,8 @@ io.on('connection', (socket) => {
     if (!room) return;
     if (room.hostId !== playerId) { socket.emit('error', { message: 'Only host can add AI players' }); return; }
     if (room.players.length >= 5) { socket.emit('error', { message: 'Room is full' }); return; }
-    const aiIndex = room.players.filter(p => p.isAI).length;
     const skill: AISkillLevel = aiSkillLevel ?? room.aiSkillLevel ?? 'medium';
-    const ai = createPlayer(`${AI_NAMES[aiIndex % AI_NAMES.length]} (AI)`, `ai-${Date.now()}`, false, true, undefined, skill);
+    const ai = createPlayer(`${pickAIName(room.players)} (AI)`, `ai-${Date.now()}`, false, true, undefined, skill);
     room.players.push(ai);
     io.to(roomId).emit('player-joined', { player: ai, room });
   });
@@ -1200,11 +1350,17 @@ io.on('connection', (socket) => {
     switch (card.type) {
       case 'property':
       case 'wild': {
-        const color = targetData?.color || card.color;
+        const color = (targetData?.color || card.color) as PropertyColor;
         if (color) {
-          card.color = color as PropertyColor; // keep card.color in sync with the set it lives in
-          const set = player.properties.find(p => p.color === color);
-          if (set) { set.cards.push(card); set.isComplete = checkPropertySetComplete(set); }
+          const propSet = player.properties.find(p => p.color === color);
+          if (propSet?.isComplete) {
+            // Set is already complete — reject play, put card back in hand
+            player.hand.push(card);
+            socket.emit('error', { message: 'That property set is already complete' });
+            return;
+          }
+          card.color = color; // keep card.color in sync with the set it lives in
+          if (propSet) { propSet.cards.push(card); propSet.isComplete = checkPropertySetComplete(propSet); }
         }
         break;
       }
@@ -1296,6 +1452,7 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('payment-made', { room });
 
     if (room.pendingPayments.length === 0) {
+      resumeTurnTimer(roomId, room);
       io.to(roomId).emit('all-payments-done', { room });
       // If it was an AI's turn that stalled waiting for human payments, advance now
       const activePlayer = room.players[room.currentPlayerIndex];
@@ -1346,6 +1503,7 @@ io.on('connection', (socket) => {
         r.pendingPayments = r.pendingPayments.filter(x => x.id !== paymentId);
         io.to(roomId).emit('just-say-no-played', { room: r, debtorId: debtor.id, paymentId });
         if (r.pendingPayments.length === 0) {
+          resumeTurnTimer(roomId, r);
           io.to(roomId).emit('all-payments-done', { room: r });
           const activePlayer = r.players[r.currentPlayerIndex];
           if (activePlayer?.isAI) advanceTurn(r, roomId);
@@ -1368,6 +1526,7 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('just-say-no-played', { room, debtorId: debtor.id, paymentId });
 
     if (room.pendingPayments.length === 0) {
+      resumeTurnTimer(roomId, room);
       io.to(roomId).emit('all-payments-done', { room });
       const activePlayer = room.players[room.currentPlayerIndex];
       if (activePlayer?.isAI) advanceTurn(room, roomId);
@@ -1410,6 +1569,7 @@ io.on('connection', (socket) => {
         room.pendingPayments = room.pendingPayments.filter(p => p.id !== paymentId);
         io.to(roomId).emit('just-say-no-played', { room, debtorId: payment.debtorId, paymentId });
         if (room.pendingPayments.length === 0) {
+          resumeTurnTimer(roomId, room);
           io.to(roomId).emit('all-payments-done', { room });
           const activePlayer = room.players[room.currentPlayerIndex];
           if (activePlayer?.isAI) advanceTurn(room, roomId);
@@ -1465,6 +1625,7 @@ io.on('connection', (socket) => {
           r.pendingPayments = r.pendingPayments.filter(x => x.id !== paymentId);
           io.to(roomId).emit('just-say-no-played', { room: r, debtorId: p.debtorId, paymentId });
           if (r.pendingPayments.length === 0) {
+            resumeTurnTimer(roomId, r);
             io.to(roomId).emit('all-payments-done', { room: r });
             const activePlayer = r.players[r.currentPlayerIndex];
             if (activePlayer?.isAI) advanceTurn(r, roomId);
@@ -1494,6 +1655,7 @@ io.on('connection', (socket) => {
       room.pendingPayments = room.pendingPayments.filter(p => p.id !== paymentId);
       io.to(roomId).emit('just-say-no-played', { room, debtorId: payment.debtorId, paymentId });
       if (room.pendingPayments.length === 0) {
+        resumeTurnTimer(roomId, room);
         io.to(roomId).emit('all-payments-done', { room });
         const activePlayer = room.players[room.currentPlayerIndex];
         if (activePlayer?.isAI) advanceTurn(room, roomId);
@@ -1615,6 +1777,12 @@ io.on('connection', (socket) => {
     const allowed = card.colors ?? [];
     if (!isUniversal && !allowed.includes(toColor)) {
       socket.emit('error', { message: 'Wildcard cannot go to that color' }); return;
+    }
+
+    // Block moving to a complete set
+    const toSetCheck = player.properties.find(p => p.color === toColor);
+    if (toSetCheck?.isComplete) {
+      socket.emit('error', { message: 'That property set is already complete' }); return;
     }
 
     // Remove from source set

@@ -1,4 +1,5 @@
 import { useSocket } from '@/hooks/useSocket';
+import { CurrencyContext, CURRENCY_SYMBOL } from '@/context/CurrencyContext';
 import { MainMenu } from '@/components/game/MainMenu';
 import { RoomLobby } from '@/components/game/RoomLobby';
 import { GameTable } from '@/components/game/GameTable';
@@ -6,8 +7,10 @@ import { PlayerHand } from '@/components/game/PlayerHand';
 import { PaymentModal } from '@/components/game/PaymentModal';
 import { ActionResponseModal } from '@/components/game/ActionResponseModal';
 import { RulesModal } from '@/components/game/RulesModal';
+import { CardComponent } from '@/components/cards/Card';
 import { Button } from '@/components/ui/button';
-import { Trophy, ArrowLeft, AlertCircle, Ban, Eye, PackageOpen, BookOpen } from 'lucide-react';
+import { Trophy, ArrowLeft, AlertCircle, Ban, Eye, PackageOpen, BookOpen, Crown } from 'lucide-react';
+import { getColorClass, getColorDisplayName } from '@/data/cards';
 import { cn } from '@/lib/utils';
 import { useState, useEffect, useRef } from 'react';
 import { sounds } from '@/hooks/useSound';
@@ -18,11 +21,15 @@ function App() {
   const [showError, setShowError] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [showCelebration, setShowCelebration] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevIsMyTurnRef = useRef(false);
   const prevPhasRef = useRef<string | null>(null);
   const prevPendingPayRef = useRef(false);
   const prevCardsPlayedRef = useRef(0);
+
+  // Currency symbol driven by room version
+  const currencySymbol = room ? (CURRENCY_SYMBOL[room.version] ?? 'M') : 'M';
 
   // Active game state — computed early so useEffects below can reference them
   const activePlayer  = room?.players[room.currentPlayerIndex];
@@ -37,11 +44,12 @@ function App() {
     }
   }, [error]);
 
-  // Countdown timer driven by room.turnStartedAt
+  // Countdown timer driven by room.turnStartedAt — pauses while payments are pending
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
-    if (!room || !room.turnTimeLimit || room.phase !== 'playing') {
-      setSecondsLeft(null);
+    if (!room || !room.turnTimeLimit || room.phase !== 'playing' || room.timerPaused) {
+      // If paused, keep showing whatever secondsLeft was; if no limit, hide it
+      if (!room?.turnTimeLimit || room?.phase !== 'playing') setSecondsLeft(null);
       return;
     }
     const tick = () => {
@@ -51,7 +59,7 @@ function App() {
     tick();
     timerRef.current = setInterval(tick, 500);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [room?.turnStartedAt, room?.turnTimeLimit, room?.phase]);
+  }, [room?.turnStartedAt, room?.turnTimeLimit, room?.phase, room?.timerPaused]);
 
   // Auto-dismiss card-taken notification after 5 seconds
   useEffect(() => {
@@ -100,11 +108,15 @@ function App() {
     prevCardsPlayedRef.current = count;
   }, [myPlayerData?.cardsPlayedThisTurn]);
 
-  // Sound: game ended
+  // Sound + celebration: game ended
   useEffect(() => {
     if (room?.phase === 'ended' && prevPhasRef.current !== 'ended') {
       const isWinner = room.winner?.id === currentPlayer?.id;
       if (isWinner) sounds.winner(); else sounds.gameOver();
+      // Show a brief celebration / reveal of winner's sets before the win screen
+      setShowCelebration(true);
+      const t = setTimeout(() => setShowCelebration(false), 4500);
+      return () => clearTimeout(t);
     }
     prevPhasRef.current = room?.phase ?? null;
   }, [room?.phase]);
@@ -143,6 +155,51 @@ function App() {
 
   if (room.phase === 'ended' && room.winner) {
     const isWinner = room.winner.id === currentPlayer?.id;
+    const winnerSets = room.winner.properties.filter(s => s.isComplete);
+
+    // Show celebration overlay first (4.5 s), then the win screen
+    if (showCelebration) {
+      return (
+        <CurrencyContext.Provider value={currencySymbol}>
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex flex-col items-center justify-center p-4 gap-6">
+          {/* Winner banner */}
+          <div className="text-center animate-bounce">
+            <div className="text-6xl mb-2">🏆</div>
+            <h2 className="text-3xl font-black text-yellow-400">{isWinner ? 'You Won!' : `${room.winner.name} Wins!`}</h2>
+            <p className="text-white/60 text-sm mt-1">Collected {winnerSets.length} complete sets</p>
+          </div>
+
+          {/* Winner's complete property sets */}
+          <div className="bg-white/10 rounded-2xl p-5 max-w-lg w-full border border-yellow-400/30">
+            <div className="flex items-center gap-2 mb-4">
+              <Crown className="w-5 h-5 text-yellow-400" />
+              <p className="text-yellow-300 font-bold text-sm uppercase tracking-wider">Winning Sets</p>
+            </div>
+            <div className="flex flex-wrap gap-4 justify-center">
+              {winnerSets.map((set, i) => (
+                <div key={i} className="flex flex-col items-center gap-1">
+                  <div className={cn('text-[9px] text-white font-bold px-2 py-0.5 rounded-full mb-1', getColorClass(set.color))}>
+                    {getColorDisplayName(set.color)} ✓
+                  </div>
+                  <div className="flex gap-1">
+                    {set.cards.map((card, ci) => (
+                      <CardComponent key={ci} card={card} size="sm" />
+                    ))}
+                  </div>
+                  {(set.hasHouse || set.hasHotel) && (
+                    <div className="flex gap-1">{set.hasHouse && <span>🏠</span>}{set.hasHotel && <span>🏨</span>}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-white/40 text-xs animate-pulse">Showing results in a moment…</p>
+        </div>
+        </CurrencyContext.Provider>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-800 to-emerald-900 flex items-center justify-center p-4">
         <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-5 sm:p-8 text-center">
@@ -153,6 +210,23 @@ function App() {
           <p className="text-gray-600 mb-6">
             {isWinner ? 'Congratulations! You collected 3 complete property sets!' : `${room.winner.name} won the game!`}
           </p>
+
+          {/* Winner's sets preview */}
+          {winnerSets.length > 0 && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 mb-4">
+              <p className="text-xs font-bold text-yellow-700 uppercase tracking-wider mb-2 flex items-center justify-center gap-1">
+                <Crown className="w-3 h-3" /> {room.winner.name}'s Winning Sets
+              </p>
+              <div className="flex flex-wrap gap-2 justify-center">
+                {winnerSets.map((set, i) => (
+                  <div key={i} className={cn('text-[9px] text-white font-bold px-2 py-1 rounded-lg flex items-center gap-1', getColorClass(set.color))}>
+                    {getColorDisplayName(set.color)} ({set.cards.length}✓)
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="bg-gray-50 rounded-xl p-4 mb-6">
             <h3 className="font-bold text-gray-700 mb-2">Final Standings</h3>
             <div className="space-y-2">
@@ -191,6 +265,7 @@ function App() {
     : '';
 
   return (
+    <CurrencyContext.Provider value={currencySymbol}>
     <div className="h-dvh bg-gray-900 flex flex-col overflow-hidden">
       {/* Header — safe-top pushes content below the notch/Dynamic Island */}
       <div className="bg-gray-800 px-3 py-2 flex items-center justify-between gap-2 flex-shrink-0 safe-top">
@@ -224,7 +299,12 @@ function App() {
               Awaiting response…
             </span>
           )}
-          {isMyTurn && secondsLeft !== null && (
+          {isMyTurn && room.timerPaused && room.turnTimeLimit > 0 && (
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-600 text-white flex items-center gap-1">
+              ⏸ Paused
+            </span>
+          )}
+          {isMyTurn && !room.timerPaused && secondsLeft !== null && (
             <span className={cn(
               'text-xs font-bold tabular-nums px-2 py-0.5 rounded-full',
               secondsLeft <= 10
@@ -407,6 +487,7 @@ function App() {
         </div>
       )}
     </div>
+    </CurrencyContext.Provider>
   );
 }
 

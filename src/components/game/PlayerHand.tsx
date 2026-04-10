@@ -3,6 +3,7 @@ import type { Card, GameRoom, PropertyColor } from '@/types/game';
 import { PROPERTY_SET_RENT } from '@/types/game';
 import { CardComponent } from '@/components/cards/Card';
 import { getColorClass, getColorDisplayName } from '@/data/cards';
+import { useCurrencyFmt } from '@/context/CurrencyContext';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Play, X, Trash2 } from 'lucide-react';
@@ -227,6 +228,7 @@ interface CardActionModalProps {
 type ModalStep = 'main' | 'select-player' | 'select-their-property' | 'select-my-property' | 'select-color' | 'select-rent-target';
 
 function CardActionModal({ card, room, currentPlayerId, cardsPlayedThisTurn, maxCardsPerTurn, onClose, onPlay, isViewOnly = false }: CardActionModalProps) {
+  const fmt = useCurrencyFmt();
   const [step, setStep] = useState<ModalStep>('main');
   const [selectedPlayerId, setSelectedPlayerId]   = useState<string>('');
   const [selectedTheirCardId, setSelectedTheirCardId] = useState<string>('');
@@ -336,7 +338,7 @@ function CardActionModal({ card, room, currentPlayerId, cardsPlayedThisTurn, max
             {step !== 'main' && (
               <button onClick={() => setStep('main')} className="text-gray-400 hover:text-gray-600 text-sm">← Back</button>
             )}
-            <h3 className="text-base font-bold text-gray-800">{card.name}</h3>
+            <h3 className="text-base font-bold text-gray-800">{fmt(card.name)}</h3>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
@@ -383,7 +385,7 @@ function CardActionModal({ card, room, currentPlayerId, cardsPlayedThisTurn, max
                             variant="outline"
                             className="w-full border-yellow-500 text-yellow-700 hover:bg-yellow-50"
                           >
-                            Bank as ${card.value}M cash
+                            Bank as {fmt(`$${card.value}M`)} cash
                           </Button>
                         )}
                       </div>
@@ -414,7 +416,7 @@ function CardActionModal({ card, room, currentPlayerId, cardsPlayedThisTurn, max
                       <p className="font-semibold text-gray-800">{p.name}</p>
                       <p className="text-xs text-gray-500">
                         {card.actionType === 'debtcollector'
-                          ? `Bank: $${p.bank.reduce((s,c)=>s+c.value,0)}M`
+                          ? fmt(`Bank: $${p.bank.reduce((s,c)=>s+c.value,0)}M`)
                           : `${validSets.length} eligible set(s)`}
                       </p>
                     </button>
@@ -534,7 +536,7 @@ function CardActionModal({ card, room, currentPlayerId, cardsPlayedThisTurn, max
                   const baseRent = rentTable[Math.min(cards_count - 1, rentTable.length - 1)] ?? 0;
                   const withHouse = set?.hasHouse ? baseRent + 3 : baseRent;
                   const finalRent = (canDoubleRent && useDoubleRent) ? withHouse * 2 : withHouse;
-                  const rentDisplay = isRent ? `$${finalRent}M rent` : '';
+                  const rentDisplay = isRent ? fmt(`$${finalRent}M rent`) : '';
                   return (
                     <button key={color} onClick={() => handleColorSelected(color)}
                       className="w-full text-left px-4 py-3 rounded-xl border-2 border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-all flex items-center gap-3">

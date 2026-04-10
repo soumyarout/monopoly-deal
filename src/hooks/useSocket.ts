@@ -134,8 +134,16 @@ export function useSocket(): [SocketState, SocketActions] {
     socket.on('game-started',         ({ room }: { room: GameRoom }) => setState(p => ({ ...p, room })));
     socket.on('cards-drawn',          ({ room }: { room: GameRoom }) => setState(p => ({ ...p, room })));
     socket.on('card-played',          ({ room }: { room: GameRoom }) => setState(p => ({ ...p, room })));
-    socket.on('payment-made',         ({ room }: { room: GameRoom }) => setState(p => ({ ...p, room })));
-    socket.on('all-payments-done',    ({ room }: { room: GameRoom }) => setState(p => ({ ...p, room })));
+    socket.on('payment-made', ({ room }: { room: GameRoom }) => {
+      setState(p => {
+        // Re-derive: if player still has an unpaid payment, keep showing it
+        const pendingPayment = p.currentPlayer
+          ? (room.pendingPayments.find(pm => pm.debtorId === p.currentPlayer!.id && !pm.jsnState) ?? null)
+          : null;
+        return { ...p, room, pendingPayment };
+      });
+    });
+    socket.on('all-payments-done',    ({ room }: { room: GameRoom }) => setState(p => ({ ...p, room, pendingPayment: null })));
     socket.on('game-ended',           ({ room }: { room: GameRoom }) => setState(p => ({ ...p, room })));
     socket.on('room-updated',         ({ room }: { room: GameRoom }) => {
       setState(p => {
@@ -152,8 +160,15 @@ export function useSocket(): [SocketState, SocketActions] {
       });
     });
 
-    socket.on('just-say-no-played', ({ room }: { room: GameRoom }) =>
-      setState(p => ({ ...p, room, pendingPayment: null, pendingJsnCounter: null })));
+    socket.on('just-say-no-played', ({ room }: { room: GameRoom }) => {
+      setState(p => {
+        // Re-derive: debtor may still owe from a previous rent that JSN didn't cancel
+        const pendingPayment = p.currentPlayer
+          ? (room.pendingPayments.find(pm => pm.debtorId === p.currentPlayer!.id && !pm.jsnState) ?? null)
+          : null;
+        return { ...p, room, pendingPayment, pendingJsnCounter: null };
+      });
+    });
 
     socket.on('must-discard', ({ count }: { count: number }) =>
       setState(p => ({ ...p, mustDiscard: count })));
