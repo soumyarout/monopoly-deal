@@ -14,12 +14,12 @@ interface CardProps {
 
 /* ─── Color palettes ─── */
 const PROP_COLOR: Record<PropertyColor, { banner: string; text: string }> = {
-  brown:     { banner: '#92400e', text: '#fff' },
+  brown:     { banner: '#6b2d0e', text: '#fff' },   // deep chocolate brown
   lightblue: { banner: '#0ea5e9', text: '#fff' },
   pink:      { banner: '#db2777', text: '#fff' },
   orange:    { banner: '#f97316', text: '#fff' },
   red:       { banner: '#dc2626', text: '#fff' },
-  yellow:    { banner: '#ca8a04', text: '#fff' },
+  yellow:    { banner: '#eab308', text: '#111' },   // bright yellow, dark text
   green:     { banner: '#16a34a', text: '#fff' },
   blue:      { banner: '#1d4ed8', text: '#fff' },
   black:     { banner: '#1f2937', text: '#fff' },

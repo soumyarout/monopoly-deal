@@ -342,16 +342,16 @@ export function getColorDisplayName(color: PropertyColor): string {
 // Get color class for styling
 export function getColorClass(color: PropertyColor): string {
   const classes: Record<PropertyColor, string> = {
-    brown: 'bg-amber-800',
+    brown: 'bg-amber-900',
     lightblue: 'bg-sky-300',
     pink: 'bg-pink-400',
     orange: 'bg-orange-500',
     red: 'bg-red-600',
-    yellow: 'bg-yellow-400',
+    yellow: 'bg-yellow-500',
     green: 'bg-green-600',
     blue: 'bg-blue-700',
     black: 'bg-gray-900',
-    utility: 'bg-amber-500',
+    utility: 'bg-lime-700',
   };
   return classes[color] || 'bg-gray-500';
 }
@@ -359,16 +359,16 @@ export function getColorClass(color: PropertyColor): string {
 // Get text color class for property colors
 export function getTextColorClass(color: PropertyColor): string {
   const classes: Record<PropertyColor, string> = {
-    brown: 'text-amber-800',
+    brown: 'text-amber-900',
     lightblue: 'text-sky-700',
     pink: 'text-pink-600',
     orange: 'text-orange-600',
     red: 'text-red-700',
-    yellow: 'text-yellow-700',
+    yellow: 'text-yellow-600',
     green: 'text-green-700',
     blue: 'text-blue-800',
     black: 'text-gray-900',
-    utility: 'text-amber-700',
+    utility: 'text-lime-700',
   };
   return classes[color] || 'text-gray-700';
 }
