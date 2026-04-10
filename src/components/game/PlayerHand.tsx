@@ -51,13 +51,7 @@ export function PlayerHand({
 
   const isCardPlayable = (card: Card): boolean => {
     if (!canPlayCard) return false;
-    if (card.type === 'rent') {
-      const rentColors = card.rentColors && card.rentColors.length > 0 ? card.rentColors : null;
-      const available = rentColors
-        ? rentColors.filter(c => (me?.properties.find(p => p.color === c)?.cards.length ?? 0) > 0)
-        : (me?.properties.filter(s => s.cards.length > 0).map(s => s.color) ?? []);
-      return available.length > 0;
-    }
+    // Rent cards are always playable — even with no matching property they can be banked as cash
     return true;
   };
 
@@ -378,10 +372,12 @@ function CardActionModal({ card, room, currentPlayerId, cardsPlayedThisTurn, max
                     )}
                     {card.type !== 'wild' && (
                       <div className="flex flex-col gap-2">
-                        <Button onClick={handleMainPlay} className="w-full bg-green-500 hover:bg-green-600 text-white">
-                          <Play className="w-4 h-4 mr-2" />
-                          {needsTarget || isRent ? 'Choose target →' : 'Play Card'}
-                        </Button>
+                        {(!isRent || availableRentColors.length > 0) && (
+                          <Button onClick={handleMainPlay} className="w-full bg-green-500 hover:bg-green-600 text-white">
+                            <Play className="w-4 h-4 mr-2" />
+                            {needsTarget || isRent ? 'Choose target →' : 'Play Card'}
+                          </Button>
+                        )}
                         {(card.type === 'action' || card.type === 'rent') && (
                           <Button
                             onClick={() => { onPlay({ bankAsCard: true }); onClose(); }}
