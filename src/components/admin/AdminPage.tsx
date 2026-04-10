@@ -56,7 +56,6 @@ function RoomRow({ room, onKill }: { room: AdminRoom; onKill: (id: string) => vo
     onKill(room.id);
   };
 
-  const humanPlayers = room.players.filter(p => !p.isAI);
   const aiPlayers    = room.players.filter(p => p.isAI);
   const disconnected = room.players.filter(p => p.disconnected).length;
 
