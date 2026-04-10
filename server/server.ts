@@ -243,6 +243,14 @@ function checkPropertySetComplete(set: PropertySet): boolean {
   return set.cards.length >= PROPERTY_SET_REQUIREMENTS[set.color];
 }
 
+/** Return house/hotel cards to discard when a set loses completeness. */
+function clearSetImprovements(set: PropertySet, discardPile: Card[]): void {
+  if (set.houseCard) { discardPile.push(set.houseCard); set.houseCard = undefined; }
+  if (set.hotelCard) { discardPile.push(set.hotelCard); set.hotelCard = undefined; }
+  set.hasHouse = false;
+  set.hasHotel = false;
+}
+
 function checkWinner(room: GameRoom): Player | null {
   for (const player of room.players) {
     if (player.properties.filter(s => s.isComplete).length >= 3) return player;
@@ -320,7 +328,7 @@ function aiPay(_room: GameRoom, debtor: Player, creditor: Player, amount: number
       while (set.cards.length > 0 && remaining > 0) {
         const card = set.cards.pop()!;
         set.isComplete = checkPropertySetComplete(set);
-        if (!set.isComplete) { set.hasHouse = false; set.hasHotel = false; }
+        if (!set.isComplete) clearSetImprovements(set, room.discardPile);
         card.color = set.color; // keep card.color in sync
         const cs = creditor.properties.find(p => p.color === set.color);
         if (cs) {
@@ -360,7 +368,7 @@ function processPayment(
     if (ci === -1) continue;
     const [card] = debtorSet.cards.splice(ci, 1);
     debtorSet.isComplete = checkPropertySetComplete(debtorSet);
-    if (!debtorSet.isComplete) { debtorSet.hasHouse = false; debtorSet.hasHotel = false; }
+    if (!debtorSet.isComplete) clearSetImprovements(debtorSet, room.discardPile);
     card.color = color; // keep card.color in sync with set
     const creditorSet = creditor.properties.find(p => p.color === color);
     if (creditorSet) {
@@ -399,7 +407,7 @@ function aiRearrangeWildcards(player: Player): void {
       if (bestCol !== set.color) {
         set.cards.splice(i, 1);
         set.isComplete = checkPropertySetComplete(set);
-        if (!set.isComplete) { set.hasHouse = false; set.hasHotel = false; }
+        if (!set.isComplete) clearSetImprovements(set, room.discardPile);
         card.color = bestCol;
         const toSet = player.properties.find(p => p.color === bestCol);
         if (toSet) { toSet.cards.push(card); toSet.isComplete = checkPropertySetComplete(toSet); }
@@ -844,10 +852,11 @@ function executeDealBreaker(room: GameRoom, action: PendingAction): void {
   const mySet = actor.properties.find(p => p.color === action.targetData?.color);
   if (targetSet?.isComplete && mySet) {
     mySet.cards.push(...targetSet.cards);
-    mySet.hasHouse = targetSet.hasHouse;
-    mySet.hasHotel = targetSet.hasHotel;
+    mySet.hasHouse = targetSet.hasHouse; mySet.houseCard = targetSet.houseCard;
+    mySet.hasHotel = targetSet.hasHotel; mySet.hotelCard = targetSet.hotelCard;
     mySet.isComplete = true;
-    targetSet.cards = []; targetSet.hasHouse = false; targetSet.hasHotel = false; targetSet.isComplete = false;
+    targetSet.cards = []; targetSet.hasHouse = false; targetSet.hasHotel = false;
+    targetSet.houseCard = undefined; targetSet.hotelCard = undefined; targetSet.isComplete = false;
     if (target.socketId) {
       io.to(target.socketId).emit('card-taken', {
         takerName: actor.name,
@@ -943,7 +952,9 @@ function resolveAction(room: GameRoom, roomId: string, action: PendingAction): v
 // ─── Action Card Handler ─────────────────────────────────────────────────────
 
 function handleActionCard(room: GameRoom, roomId: string, player: Player, card: Card, targetData?: any): void {
-  room.discardPile.push(card);
+  // House and Hotel cards stay on the table with their set — do NOT discard them here
+  const isImprovement = card.actionType === 'house' || card.actionType === 'hotel';
+  if (!isImprovement) room.discardPile.push(card);
 
   switch (card.actionType) {
     case 'passgo': {
@@ -1016,10 +1027,11 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
         const mySet = player.properties.find(p => p.color === targetData?.color);
         if (targetSet?.isComplete && mySet) {
           mySet.cards.push(...targetSet.cards);
-          mySet.hasHouse = targetSet.hasHouse;
-          mySet.hasHotel = targetSet.hasHotel;
+          mySet.hasHouse = targetSet.hasHouse; mySet.houseCard = targetSet.houseCard;
+          mySet.hasHotel = targetSet.hasHotel; mySet.hotelCard = targetSet.hotelCard;
           mySet.isComplete = true;
-          targetSet.cards = []; targetSet.hasHouse = false; targetSet.hasHotel = false; targetSet.isComplete = false;
+          targetSet.cards = []; targetSet.hasHouse = false; targetSet.hasHotel = false;
+          targetSet.houseCard = undefined; targetSet.hotelCard = undefined; targetSet.isComplete = false;
           if (targetPlayer.socketId) {
             io.to(targetPlayer.socketId).emit('card-taken', {
               takerName: player.name,
@@ -1141,8 +1153,17 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
         // Railroads (black) and Utilities cannot have Houses/Hotels (spec §8.2)
         if (color !== 'black' && color !== 'utility') {
           const set = player.properties.find(p => p.color === color);
-          if (set?.isComplete && !set.hasHouse) set.hasHouse = true;
+          if (set?.isComplete && !set.hasHouse) {
+            set.hasHouse = true;
+            set.houseCard = card; // card stays on the table
+          } else {
+            room.discardPile.push(card); // invalid target — discard
+          }
+        } else {
+          room.discardPile.push(card);
         }
+      } else {
+        room.discardPile.push(card);
       }
       break;
     }
@@ -1152,8 +1173,19 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
         const color = targetData.color as PropertyColor;
         if (color !== 'black' && color !== 'utility') {
           const set = player.properties.find(p => p.color === color);
-          if (set?.isComplete && set.hasHouse && !set.hasHotel) set.hasHotel = true;
+          if (set?.isComplete && set.hasHouse && !set.hasHotel) {
+            set.hasHotel = true;
+            set.hotelCard = card; // card stays on the table
+            // Per rules: house card returns to supply when hotel is added
+            if (set.houseCard) { room.discardPile.push(set.houseCard); set.houseCard = undefined; }
+          } else {
+            room.discardPile.push(card);
+          }
+        } else {
+          room.discardPile.push(card);
         }
+      } else {
+        room.discardPile.push(card);
       }
       break;
     }
@@ -1825,10 +1857,9 @@ io.on('connection', (socket) => {
     fromSet.cards.splice(ci, 1);
     const wasComplete = fromSet.isComplete;
     fromSet.isComplete = checkPropertySetComplete(fromSet);
-    // If source set lost completeness, remove house/hotel (they require a complete set)
+    // If source set lost completeness, return house/hotel cards to discard
     if (wasComplete && !fromSet.isComplete) {
-      fromSet.hasHouse = false;
-      fromSet.hasHotel = false;
+      clearSetImprovements(fromSet, room.discardPile);
     }
 
     // Update the card's displayed color and add to target set

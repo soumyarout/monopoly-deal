@@ -38,6 +38,8 @@ export interface PropertySet {
   cards: Card[];
   hasHouse: boolean;
   hasHotel: boolean;
+  houseCard?: Card;  // physical card stays on the table (not in discard)
+  hotelCard?: Card;  // physical card stays on the table (not in discard)
   isComplete: boolean;
 }
 
