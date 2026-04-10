@@ -47,12 +47,9 @@ export function PlayerHand({
     }
   }
 
-  const me = room.players.find(p => p.id === currentPlayerId);
-
-  const isCardPlayable = (card: Card): boolean => {
-    if (!canPlayCard) return false;
-    // Rent cards are always playable — even with no matching property they can be banked as cash
-    return true;
+  const isCardPlayable = (_card: Card): boolean => {
+    // All cards are actionable when it's your turn — rent cards with no matching property can still be banked
+    return canPlayCard;
   };
 
   const handleCardClick = (card: Card) => {
