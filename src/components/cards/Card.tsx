@@ -207,13 +207,14 @@ function PropertyCard({ card, sz }: { card: CardType; sz: 'sm' | 'md' | 'lg' }) 
 }
 
 function WildPropertyCard({ card, sz }: { card: CardType; sz: 'sm' | 'md' | 'lg' }) {
-  const colors      = card.colors || [card.color || 'brown'];
+  const colors       = card.colors || [card.color || 'brown'];
   const uniqueColors = [...new Set(colors)];
-  const isUniversal  = uniqueColors.length > 2;
+  // Single-color wildcard (e.g. ['black','black'] railroad-only) → treat as universal-style
+  const isUniversal  = uniqueColors.length !== 2;
   const isSm         = sz === 'sm';
   const isLg         = sz === 'lg';
 
-  /* Universal (rainbow) wildcard */
+  /* Single-color or true universal wildcard */
   if (isUniversal) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
