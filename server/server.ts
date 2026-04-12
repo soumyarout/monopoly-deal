@@ -1927,8 +1927,8 @@ io.on('connection', (socket) => {
     if (!room) return;
     const player = room.players.find(p => p.id === playerId) ?? room.spectators.find(s => s.id === playerId);
     if (!player) return;
-    const ALLOWED_EMOJIS = ['😂','🔥','😮','👏','💀','😤','🎉','🤝'];
-    if (!ALLOWED_EMOJIS.includes(emoji)) return;
+    // Accept any emoji — validate it's short (emoji are 1–15 chars) and text-only
+    if (typeof emoji !== 'string' || emoji.length === 0 || emoji.length > 20) return;
     io.to(roomId).emit('player-reaction', { playerId, playerName: player.name, emoji });
   });
 

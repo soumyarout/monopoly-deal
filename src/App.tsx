@@ -1,5 +1,8 @@
 import { useSocket } from '@/hooks/useSocket';
 import type { PlayerReaction } from '@/hooks/useSocket';
+import { lazy, Suspense } from 'react';
+import type { EmojiClickData, Theme } from 'emoji-picker-react';
+const EmojiPicker = lazy(() => import('emoji-picker-react'));
 import { CurrencyContext, CURRENCY_SYMBOL } from '@/context/CurrencyContext';
 import { MainMenu } from '@/components/game/MainMenu';
 import { RoomLobby } from '@/components/game/RoomLobby';
@@ -327,22 +330,30 @@ function App() {
               <Button
                 onClick={() => setShowReactionPanel(v => !v)}
                 variant="ghost" size="sm"
-                className={cn('text-gray-400 hover:text-white text-xs px-2', showReactionPanel && 'text-yellow-400')}
+                className={cn('text-gray-400 hover:text-white text-base px-2', showReactionPanel && 'text-yellow-400')}
               >
                 😊
               </Button>
               {showReactionPanel && (
-                <div className="absolute right-0 top-8 z-[95] bg-gray-800 rounded-2xl shadow-2xl p-2 flex gap-1 border border-gray-700">
-                  {(['😂','🔥','😮','👏','💀','😤','🎉','🤝'] as const).map(emoji => (
-                    <button
-                      key={emoji}
-                      onClick={() => { actions.sendReaction(emoji); setShowReactionPanel(false); }}
-                      className="text-xl hover:scale-125 transition-transform p-1 rounded-lg hover:bg-gray-700"
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
+                <>
+                  {/* Click-away backdrop */}
+                  <div className="fixed inset-0 z-[94]" onClick={() => setShowReactionPanel(false)} />
+                  <div className="absolute right-0 top-9 z-[95]">
+                    <Suspense fallback={<div className="bg-gray-800 rounded-2xl w-[300px] h-[380px] flex items-center justify-center text-gray-400 text-sm">Loading…</div>}>
+                      <EmojiPicker
+                        theme={'dark' as Theme}
+                        onEmojiClick={(data: EmojiClickData) => {
+                          actions.sendReaction(data.emoji);
+                          setShowReactionPanel(false);
+                        }}
+                        searchPlaceholder="Search emoji…"
+                        width={300}
+                        height={380}
+                        lazyLoadEmojis
+                      />
+                    </Suspense>
+                  </div>
+                </>
               )}
             </div>
           )}
