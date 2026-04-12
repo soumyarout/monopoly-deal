@@ -201,7 +201,7 @@ All of these can be banked as money instead of played.[web:9][web:8][web:19]
    - You choose which card; target player has no choice except “Just Say No”.
 
 3. **Forced Deal**  
-   - Count: 4 (in some printings 3; choose canonical for your build, spec uses 4 as per many rule summaries).[web:9][web:19]  
+   - Count:And 4 (in some printings 3; choose canonical for your build, spec uses 4 as per many rule summaries).[web:9][web:19]  
    - Bank value: 3M.[web:9][web:8]  
    - Effect: Swap one of your properties with one property from another player (again, not from a complete set).[web:9][web:8]
 

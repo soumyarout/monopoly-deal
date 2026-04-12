@@ -45,3 +45,32 @@
 ✅ 3. Double rent + Rent = 1 attempt out of 3 in a turn. Fix whereever applicable. The label count should not consider 2 attempts gone. [Fixed v1.6.0 - label now says "Free modifier (no extra play)"]
 ✅ 4. When paying rent, no player can break theit set property. If no money/non-set property they won't pay. Currently AI players giving full set property as rent!! [Fixed v1.6.0 - aiPay now skips complete sets]
 ✅ 5. When rooms are created, host can decide level of AI player skills, beginner, medium, advanced etc. And based on these their way of gaming must change. [Fixed v1.6.0]
+
+
+
+✅ 1. Wild card getting added to a full set. Eg orange property parel, dadar, worli. Orange wild card is also getting clubbed with that set. It should have max 3 and only house & hotel allowed to add to set [Fixed v1.7.0 - server + client both block adding to complete sets]
+✅ 2. Payment waiting issues making game unplayable. It reproduced when back to back rents card played game hanged even all players paid status saying pending payment in multiplayer real players + AI player. [Fixed v1.7.0 - payment-made/just-say-no-played now re-derive pendingPayment from updated room state, preventing stale "pending" UI after multiple sequential payments]
+✅ 3. Pick random names for AI players. [Fixed v1.7.0 - pickAIName() helper picks unused random name]
+✅ 4. For India - do not keep only Mumbai, add Bangalore, Kolkata, Bhubaneswar, Lucknow. And play them random. [Fixed v1.7.0 - Brown=Bhubaneswar, LightBlue=Lucknow, Pink=Kolkata, Yellow=Bangalore, Green=Bangalore Premium, Blue=Connaught+Nariman, Railroads=Express trains]
+✅ 5. Card images are super confusing, can you refer card_sample_images folder and get inspired. [Fixed v1.7.0 - redesigned Card.tsx: thicker color headers, cleaner property layouts, distinct action card palettes, improved cash denominations]
+✅ 6. Discard card and M deck - that row has space, can we not utilise the showing the discarded cards, like at least last 10 may. [Fixed v1.7.0 - click discard pile to open modal showing last 10 cards with ★ on newest]
+✅ 7. When someone wins, game is very promptly showing the Win screen. [Fixed v1.7.0 - 4.5s celebration screen shows winner's complete sets highlighted before win results screen]
+
+
+error 1 - Its a green property, paired with wild card to make a full set. Then Not sure how it became a utility.  If you look at the green card it needs only 2 to make set. But suddenly water supply started appearing. 
+
+error 2 - You can notice rents I received are properties, they should appear in property section instead of cash section. 
+
+You said both issues are fixed but they are not. I paid 10 GBP to you. Can you get my money back or shall I shwitch another LLM provider instead of claude?
+
+
+
+1. Double rent can not played alone, only can be played along with Rent card or if player wants to convert to cash. Currently double rent cards are playable alone to table. 
+
+2. AI players need to have the maturity like they should be smart enough in gameplay. Take this scenario - 1 human 4 AI player. 1 AI player Carlos got 2 sets ready. Bently got deal breaker, they should try to push Carlos not to win by trying to take the set using deal breaker. Currently AI players are not mature, all the time they target human players! All players should play competitive game. 
+
+3. Wild rent and wild property card hard to distinguish. wild property card needs to be fully colored like Deal Breaker or Say no. Its a 
+powerful card and should be easy to recognise. 
+
+4. Like any other games, eg. Pool 8 balls by miniclip or similar mutiplayer games, you can give reactions. Can we have that option? Make the game more interesting and fun. 
+
