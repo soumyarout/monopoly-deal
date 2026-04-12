@@ -23,9 +23,11 @@ const TIMER_OPTIONS = [
   { value: 0,   label: '∞ No limit' },
 ];
 
+const PLAYER_NAME_KEY = 'mdeal-player-name';
+
 export function MainMenu({ onCreateRoom, onJoinRoom, onWatchRoom, connected = true }: MainMenuProps) {
   const [mode, setMode] = useState<'menu' | 'create-single' | 'create-multi' | 'join' | 'watch'>('menu');
-  const [playerName, setPlayerName] = useState('');
+  const [playerName, setPlayerName] = useState(() => localStorage.getItem(PLAYER_NAME_KEY) ?? '');
   const [roomCode, setRoomCode] = useState('');
   const [version, setVersion] = useState<GameVersion>('us');
   const [aiCount, setAiCount] = useState(3);
@@ -204,7 +206,7 @@ export function MainMenu({ onCreateRoom, onJoinRoom, onWatchRoom, connected = tr
               <Input
                 id="name"
                 value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
+                onChange={(e) => { setPlayerName(e.target.value); localStorage.setItem(PLAYER_NAME_KEY, e.target.value); }}
                 placeholder="Enter your name"
                 className="mt-2 h-12"
                 maxLength={20}
@@ -364,7 +366,7 @@ export function MainMenu({ onCreateRoom, onJoinRoom, onWatchRoom, connected = tr
               <Input
                 id="name"
                 value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
+                onChange={(e) => { setPlayerName(e.target.value); localStorage.setItem(PLAYER_NAME_KEY, e.target.value); }}
                 placeholder="Enter your name"
                 className="mt-2 h-12"
                 maxLength={20}
@@ -476,7 +478,7 @@ export function MainMenu({ onCreateRoom, onJoinRoom, onWatchRoom, connected = tr
               <Input
                 id="join-name"
                 value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
+                onChange={(e) => { setPlayerName(e.target.value); localStorage.setItem(PLAYER_NAME_KEY, e.target.value); }}
                 placeholder="Enter your name"
                 className="mt-2 h-12"
                 maxLength={20}
@@ -546,7 +548,7 @@ export function MainMenu({ onCreateRoom, onJoinRoom, onWatchRoom, connected = tr
               <Input
                 id="watch-name"
                 value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
+                onChange={(e) => { setPlayerName(e.target.value); localStorage.setItem(PLAYER_NAME_KEY, e.target.value); }}
                 placeholder="Enter your name"
                 className="mt-2 h-12"
                 maxLength={20}
