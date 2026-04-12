@@ -19,6 +19,14 @@ export interface CardTakenNotification {
   dealType: string;
 }
 
+export interface PlayerReaction {
+  id: string;          // unique key for React list
+  playerId: string;
+  playerName: string;
+  emoji: string;
+  timestamp: number;
+}
+
 interface SocketState {
   connected: boolean;
   room: GameRoom | null;
@@ -32,6 +40,7 @@ interface SocketState {
   pendingJsnCounter: { paymentId: string; debtorName: string } | null;
   cardTakenNotification: CardTakenNotification | null;
   jsnNotification: { message: string } | null;
+  reactions: PlayerReaction[];
 }
 
 interface SocketActions {
@@ -55,6 +64,7 @@ interface SocketActions {
   moveWildcard: (cardId: string, fromColor: PropertyColor, toColor: PropertyColor) => void;
   clearCardTakenNotification: () => void;
   clearJsnNotification: () => void;
+  sendReaction: (emoji: string) => void;
 }
 
 export function useSocket(): [SocketState, SocketActions] {
@@ -72,6 +82,7 @@ export function useSocket(): [SocketState, SocketActions] {
     pendingJsnCounter: null,
     cardTakenNotification: null,
     jsnNotification: null,
+    reactions: [],
   });
 
   useEffect(() => {
@@ -226,6 +237,13 @@ export function useSocket(): [SocketState, SocketActions] {
       setState(p => ({ ...p, jsnNotification: { message } }));
     });
 
+    socket.on('player-reaction', ({ playerId, playerName, emoji }: { playerId: string; playerName: string; emoji: string }) => {
+      const reaction: PlayerReaction = { id: `${Date.now()}-${Math.random()}`, playerId, playerName, emoji, timestamp: Date.now() };
+      setState(p => ({ ...p, reactions: [...p.reactions, reaction] }));
+      // Auto-remove after 3.5 s
+      setTimeout(() => setState(p => ({ ...p, reactions: p.reactions.filter(r => r.id !== reaction.id) })), 3500);
+    });
+
     socket.on('error', ({ message }: { message: string }) =>
       setState(p => ({ ...p, error: message })));
 
@@ -257,7 +275,7 @@ export function useSocket(): [SocketState, SocketActions] {
     localStorage.removeItem(ROOM_ID_KEY);
     socketRef.current?.disconnect();
     setTimeout(() => socketRef.current?.connect(), 100);
-    setState({ connected: false, room: null, currentPlayer: null, isSpectator: false, spectatorInfo: null, error: null, mustDiscard: 0, pendingPayment: null, pendingAction: null, pendingJsnCounter: null, cardTakenNotification: null, jsnNotification: null });
+    setState({ connected: false, room: null, currentPlayer: null, isSpectator: false, spectatorInfo: null, error: null, mustDiscard: 0, pendingPayment: null, pendingAction: null, pendingJsnCounter: null, cardTakenNotification: null, jsnNotification: null, reactions: [] });
   }, []);
 
   const addAIPlayer = useCallback((aiSkillLevel?: AISkillLevel) => {
@@ -330,11 +348,18 @@ export function useSocket(): [SocketState, SocketActions] {
     setState(p => ({ ...p, jsnNotification: null }));
   }, []);
 
+  const sendReaction = useCallback((emoji: string) => {
+    if (!state.room) return;
+    const id = state.currentPlayer?.id ?? state.spectatorInfo?.id;
+    if (!id) return;
+    socketRef.current?.emit('send-reaction', { roomId: state.room.id, playerId: id, emoji });
+  }, [state.room, state.currentPlayer, state.spectatorInfo]);
+
   return [state, {
     createRoom, joinRoom, watchRoom, startGame, toggleReady, leaveRoom,
     addAIPlayer, removeAIPlayer, drawCards, playCard, endTurn,
     discardCards, payAmount, justSayNo, counterJsn, respondToAction, moveWildcard,
-    clearCardTakenNotification, clearJsnNotification,
+    clearCardTakenNotification, clearJsnNotification, sendReaction,
   }];
 }
 

@@ -214,39 +214,64 @@ function WildPropertyCard({ card, sz }: { card: CardType; sz: 'sm' | 'md' | 'lg'
   const isSm         = sz === 'sm';
   const isLg         = sz === 'lg';
 
-  /* Single-color or true universal wildcard */
+  /* Single-color or true universal wildcard — full rainbow fill, visually powerful */
   if (isUniversal) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{
+        display: 'flex', flexDirection: 'column', height: '100%',
+        background: 'linear-gradient(160deg,#7c3aed 0%,#db2777 35%,#f97316 65%,#eab308 100%)',
+        position: 'relative', overflow: 'hidden',
+      }}>
+        {/* Sheen overlay */}
         <div style={{
-          background: 'linear-gradient(90deg,#7c3aed,#db2777,#f97316)',
-          padding: isSm ? '2px 3px' : '3px 5px',
-          display: 'flex', alignItems: 'center', gap: 2,
-          minHeight: isSm ? 22 : 28,
-        }}>
+          position: 'absolute', inset: 0,
+          background: 'linear-gradient(135deg,rgba(255,255,255,0.18) 0%,transparent 55%)',
+          pointerEvents: 'none',
+        }} />
+        {/* Value badge top-left */}
+        <div style={{ padding: isSm ? '2px 3px' : '3px 5px', position: 'relative', zIndex: 1 }}>
           <MBadge value={card.value} sz={sz} />
-          <div style={{ color: 'white', fontWeight: 900, fontSize: isSm ? 5 : isLg ? 9 : 6.5, flex: 1, textAlign: 'center' }}>
-            WILD PROPERTY
-          </div>
         </div>
+        {/* Body */}
         <div style={{
-          flex: 1, background: '#f5f3ff',
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px',
+          flex: 1, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          gap: isSm ? 2 : 3, padding: isSm ? '2px' : '4px',
+          position: 'relative', zIndex: 1,
         }}>
-          {!isSm && (
-            <div style={{ color: '#6b21a8', fontWeight: 700, fontSize: 6, textAlign: 'center', letterSpacing: '0.04em' }}>
-              CHOOSE ONE COLOUR
-            </div>
-          )}
+          {/* Star icon */}
+          <div style={{ fontSize: isSm ? 14 : isLg ? 32 : 22, lineHeight: 1, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.4))' }}>
+            ⭐
+          </div>
+          {/* Title */}
+          <div style={{
+            color: 'white', fontWeight: 900, textAlign: 'center',
+            fontSize: isSm ? 5.5 : isLg ? 10 : 7.5,
+            lineHeight: 1.2, letterSpacing: '0.02em',
+            textShadow: '0 1px 3px rgba(0,0,0,0.5)',
+          }}>
+            WILD{'\n'}PROPERTY
+          </div>
+          {/* Colour dots */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center', maxWidth: isSm ? 50 : 70 }}>
             {ALL_COLORS.map(c => (
               <div key={c} style={{
                 width: isSm ? 7 : 9, height: isSm ? 7 : 9,
-                borderRadius: '50%', background: PROP_COLOR[c].banner, border: '1px solid white',
+                borderRadius: '50%', background: PROP_COLOR[c].banner,
+                border: '1.5px solid rgba(255,255,255,0.8)',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
               }} />
             ))}
           </div>
+          {!isSm && (
+            <div style={{
+              color: 'rgba(255,255,255,0.9)', fontWeight: 700,
+              fontSize: 5.5, textAlign: 'center', letterSpacing: '0.06em',
+              textShadow: '0 1px 2px rgba(0,0,0,0.4)',
+            }}>
+              ANY COLOUR
+            </div>
+          )}
         </div>
       </div>
     );

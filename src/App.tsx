@@ -1,4 +1,5 @@
 import { useSocket } from '@/hooks/useSocket';
+import type { PlayerReaction } from '@/hooks/useSocket';
 import { CurrencyContext, CURRENCY_SYMBOL } from '@/context/CurrencyContext';
 import { MainMenu } from '@/components/game/MainMenu';
 import { RoomLobby } from '@/components/game/RoomLobby';
@@ -17,9 +18,10 @@ import { sounds } from '@/hooks/useSound';
 
 function App() {
   const [state, actions] = useSocket();
-  const { room, currentPlayer, error, mustDiscard, pendingPayment, pendingAction, pendingJsnCounter, isSpectator, cardTakenNotification, jsnNotification } = state;
+  const { room, currentPlayer, error, mustDiscard, pendingPayment, pendingAction, pendingJsnCounter, isSpectator, cardTakenNotification, jsnNotification, reactions } = state;
   const [showError, setShowError] = useState(false);
   const [showRules, setShowRules] = useState(false);
+  const [showReactionPanel, setShowReactionPanel] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -319,6 +321,31 @@ function App() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-gray-600 text-[10px] tabular-nums hidden sm:inline">v{__APP_VERSION__}</span>
+          {/* Reaction button — only shown in an active game */}
+          {room?.phase === 'playing' && (
+            <div className="relative">
+              <Button
+                onClick={() => setShowReactionPanel(v => !v)}
+                variant="ghost" size="sm"
+                className={cn('text-gray-400 hover:text-white text-xs px-2', showReactionPanel && 'text-yellow-400')}
+              >
+                😊
+              </Button>
+              {showReactionPanel && (
+                <div className="absolute right-0 top-8 z-[95] bg-gray-800 rounded-2xl shadow-2xl p-2 flex gap-1 border border-gray-700">
+                  {(['😂','🔥','😮','👏','💀','😤','🎉','🤝'] as const).map(emoji => (
+                    <button
+                      key={emoji}
+                      onClick={() => { actions.sendReaction(emoji); setShowReactionPanel(false); }}
+                      className="text-xl hover:scale-125 transition-transform p-1 rounded-lg hover:bg-gray-700"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <Button onClick={() => setShowRules(true)} variant="ghost" size="sm" className="text-gray-400 hover:text-white text-xs px-2">
             <BookOpen className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline">Rules</span>
           </Button>
@@ -486,8 +513,42 @@ function App() {
           <AlertCircle className="w-5 h-5" /> {error}
         </div>
       )}
+
+      {/* Floating emoji reactions */}
+      <ReactionOverlay reactions={reactions} />
     </div>
     </CurrencyContext.Provider>
+  );
+}
+
+// ─── Floating Reaction Bubbles ────────────────────────────────────────────────
+
+function ReactionOverlay({ reactions }: { reactions: PlayerReaction[] }) {
+  if (reactions.length === 0) return null;
+  return (
+    <>
+      <style>{`
+        @keyframes reactionFloat {
+          0%   { opacity: 1; transform: translateY(0) scale(1); }
+          70%  { opacity: 0.9; transform: translateY(-80px) scale(1.1); }
+          100% { opacity: 0; transform: translateY(-120px) scale(0.9); }
+        }
+        .reaction-bubble {
+          animation: reactionFloat 3.5s ease-out forwards;
+        }
+      `}</style>
+      <div className="fixed bottom-40 right-4 z-[85] flex flex-col-reverse gap-2 pointer-events-none">
+        {reactions.map(r => (
+          <div
+            key={r.id}
+            className="reaction-bubble flex items-center gap-2 bg-black/70 backdrop-blur-sm text-white text-sm font-semibold px-3 py-2 rounded-2xl shadow-xl border border-white/10 w-max"
+          >
+            <span className="text-2xl leading-none">{r.emoji}</span>
+            <span className="text-xs text-white/80">{r.playerName}</span>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 

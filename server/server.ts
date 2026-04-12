@@ -205,6 +205,16 @@ function resumeTurnTimer(roomId: string, room: GameRoom): void {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+/** Score how close a player is to winning — higher = more dangerous target.
+ *  Each complete set = 1.0; partial set = cards/required (0..1). */
+function playerThreatScore(p: Player): number {
+  return p.properties.reduce((score, set) => {
+    if (set.cards.length === 0) return score;
+    const req = PROPERTY_SET_REQUIREMENTS[set.color] ?? 3;
+    return score + (set.isComplete ? 1 : set.cards.length / req);
+  }, 0);
+}
+
 function createPlayer(name: string, socketId: string, isHost: boolean, isAI = false, persistentPlayerId?: string, aiSkill?: AISkillLevel): Player {
   return {
     id: uuidv4(),
@@ -543,22 +553,25 @@ function processBeginnerAITurn(room: GameRoom, roomId: string, player: Player): 
       } else if (card.actionType === 'birthday') {
         targetData = null;
       } else if (card.actionType === 'debtcollector') {
-        // Random target, not richest
-        const target = others[Math.floor(Math.random() * others.length)];
+        // Target the most dangerous opponent (closest to winning)
+        const byThreat = [...others].sort((a, b) => playerThreatScore(b) - playerThreatScore(a));
+        const target = byThreat[0] ?? others[0];
         targetData = target ? { targetPlayerId: target.id } : null;
       } else if (card.actionType === 'dealbreaker') {
-        // Pick a random complete set from a random opponent
-        const oppsWithSets = others.filter(o => o.properties.some(s => s.isComplete));
-        const opp = oppsWithSets[Math.floor(Math.random() * oppsWithSets.length)];
+        // Target the most dangerous opponent who has a complete set
+        const oppsWithSets = others.filter(o => o.properties.some(s => s.isComplete))
+          .sort((a, b) => playerThreatScore(b) - playerThreatScore(a));
+        const opp = oppsWithSets[0];
         if (opp) {
           const completeSets = opp.properties.filter(s => s.isComplete);
           const set = completeSets[Math.floor(Math.random() * completeSets.length)];
           targetData = set ? { targetPlayerId: opp.id, color: set.color } : null;
         }
       } else if (card.actionType === 'slydeal') {
-        // Steal a random card from a random opponent's incomplete set
-        const oppsWithProps = others.filter(o => o.properties.some(s => !s.isComplete && s.cards.length > 0));
-        const opp = oppsWithProps[Math.floor(Math.random() * oppsWithProps.length)];
+        // Steal from the most dangerous opponent's incomplete set
+        const oppsWithProps = others.filter(o => o.properties.some(s => !s.isComplete && s.cards.length > 0))
+          .sort((a, b) => playerThreatScore(b) - playerThreatScore(a));
+        const opp = oppsWithProps[0];
         if (opp) {
           const incompSets = opp.properties.filter(s => !s.isComplete && s.cards.length > 0);
           const set = incompSets[Math.floor(Math.random() * incompSets.length)];
@@ -568,9 +581,10 @@ function processBeginnerAITurn(room: GameRoom, roomId: string, player: Player): 
           }
         }
       } else if (card.actionType === 'forceddeal') {
-        // Random swap: pick a random card from any opponent's incomplete set, give a random card of ours
-        const oppsWithProps = others.filter(o => o.properties.some(s => !s.isComplete && s.cards.length > 0));
-        const opp = oppsWithProps[Math.floor(Math.random() * oppsWithProps.length)];
+        // Swap with the most dangerous opponent's incomplete set
+        const oppsWithProps = others.filter(o => o.properties.some(s => !s.isComplete && s.cards.length > 0))
+          .sort((a, b) => playerThreatScore(b) - playerThreatScore(a));
+        const opp = oppsWithProps[0];
         const myIncompSets = player.properties.filter(s => s.cards.length > 0);
         if (opp && myIncompSets.length > 0) {
           const theirSets = opp.properties.filter(s => !s.isComplete && s.cards.length > 0);
@@ -660,11 +674,11 @@ function processAITurn(room: GameRoom, player: Player): void {
       }
     }
 
-    // 2. Deal Breaker (advanced: step 2; medium: step 4) — random opponent order
+    // 2. Deal Breaker (advanced: step 2; medium: step 4) — highest-threat opponent first
     if (!chosenCard && skill === 'advanced') {
       const db = acts.find(c => c.actionType === 'dealbreaker');
       if (db) {
-        const randomOthers = [...others].sort(() => Math.random() - 0.5);
+        const randomOthers = [...others].sort((a, b) => playerThreatScore(b) - playerThreatScore(a));
         for (const opp of randomOthers) {
           for (const set of opp.properties.filter(s => s.isComplete)) {
             const mySet = player.properties.find(p => p.color === set.color);
@@ -683,11 +697,11 @@ function processAITurn(room: GameRoom, player: Player): void {
       if (passgo && player.hand.length <= 5) chosenCard = passgo;
     }
 
-    // 4. Deal Breaker (medium: here)
+    // 4. Deal Breaker (medium: here) — highest-threat opponent first
     if (!chosenCard && skill === 'medium') {
       const db = acts.find(c => c.actionType === 'dealbreaker');
       if (db) {
-        for (const opp of others) {
+        for (const opp of [...others].sort((a, b) => playerThreatScore(b) - playerThreatScore(a))) {
           for (const set of opp.properties.filter(s => s.isComplete)) {
             const mySet = player.properties.find(p => p.color === set.color);
             if (!mySet?.isComplete) {
@@ -699,11 +713,11 @@ function processAITurn(room: GameRoom, player: Player): void {
       }
     }
 
-    // 5. Sly Deal — steal a card that helps complete our set (random target order)
+    // 5. Sly Deal — steal from highest-threat opponent first (card that best helps our set)
     if (!chosenCard) {
       const sly = acts.find(c => c.actionType === 'slydeal');
       if (sly) {
-        const randomOthers = [...others].sort(() => Math.random() - 0.5);
+        const randomOthers = [...others].sort((a, b) => playerThreatScore(b) - playerThreatScore(a));
         let bestOpp: Player | null = null, bestColor: PropertyColor | null = null, bestCardId: string | null = null, bestScore = -1;
         for (const opp of randomOthers) {
           for (const set of opp.properties.filter(s => !s.isComplete && s.cards.length > 0)) {
@@ -1905,6 +1919,17 @@ io.on('connection', (socket) => {
     }
 
     io.to(roomId).emit('player-updated', { player, room });
+  });
+
+  // ── Emoji reaction ──
+  socket.on('send-reaction', ({ roomId, playerId, emoji }: { roomId: string; playerId: string; emoji: string }) => {
+    const room = rooms.get(roomId);
+    if (!room) return;
+    const player = room.players.find(p => p.id === playerId) ?? room.spectators.find(s => s.id === playerId);
+    if (!player) return;
+    const ALLOWED_EMOJIS = ['😂','🔥','😮','👏','💀','😤','🎉','🤝'];
+    if (!ALLOWED_EMOJIS.includes(emoji)) return;
+    io.to(roomId).emit('player-reaction', { playerId, playerName: player.name, emoji });
   });
 
   // ── End turn ──

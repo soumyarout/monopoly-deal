@@ -233,6 +233,7 @@ function CardActionModal({ card, room, currentPlayerId, cardsPlayedThisTurn, max
   // ── Simple cards: play immediately ──
   const needsTarget = ['dealbreaker','slydeal','forceddeal','debtcollector'].includes(card.actionType ?? '');
   const isRent = card.type === 'rent';
+  const isDoubleRent = card.actionType === 'doublerent';
   const isWildRent = isRent && (!card.rentColors || card.rentColors.length === 0);
 
   // ── Determine which colors I can rent for ──
@@ -369,11 +370,16 @@ function CardActionModal({ card, room, currentPlayerId, cardsPlayedThisTurn, max
                     )}
                     {card.type !== 'wild' && (
                       <div className="flex flex-col gap-2">
-                        {(!isRent || availableRentColors.length > 0) && (
+                        {(!isRent || availableRentColors.length > 0) && !isDoubleRent && (
                           <Button onClick={handleMainPlay} className="w-full bg-green-500 hover:bg-green-600 text-white">
                             <Play className="w-4 h-4 mr-2" />
                             {needsTarget || isRent ? 'Choose target →' : 'Play Card'}
                           </Button>
+                        )}
+                        {isDoubleRent && (
+                          <div className="bg-cyan-50 border border-cyan-200 rounded-xl px-3 py-2 text-xs text-cyan-700 text-center">
+                            Play a <strong>Rent card</strong> first — Double the Rent will be offered as a free modifier.
+                          </div>
                         )}
                         {(card.type === 'action' || card.type === 'rent') && (
                           <Button
