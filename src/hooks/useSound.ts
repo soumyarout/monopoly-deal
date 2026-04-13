@@ -1,3 +1,26 @@
+// Audio + Haptics settings
+// Stored in localStorage under 'mdeal-audio-setting'
+// Values: 'both' | 'haptics' | 'none'
+export type AudioSetting = 'both' | 'haptics' | 'none';
+const AUDIO_KEY = 'mdeal-audio-setting';
+
+export function getAudioSetting(): AudioSetting {
+  return (localStorage.getItem(AUDIO_KEY) as AudioSetting) ?? 'both';
+}
+export function setAudioSetting(s: AudioSetting) {
+  localStorage.setItem(AUDIO_KEY, s);
+}
+function soundEnabled() { return getAudioSetting() === 'both'; }
+function hapticsEnabled() { const s = getAudioSetting(); return s === 'both' || s === 'haptics'; }
+
+/** Trigger device vibration (Android; silently no-ops on iOS/unsupported). */
+export function vibrate(pattern: number | number[]) {
+  if (!hapticsEnabled()) return;
+  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+    navigator.vibrate(pattern);
+  }
+}
+
 // Web Audio API sound effects — no external files, works on iOS PWA
 //
 // iOS RULES:
@@ -43,6 +66,7 @@ function getCtx(): AudioContext | null {
 }
 
 function tone(freq: number, dur: number, type: OscillatorType = 'sine', vol = 0.35, delay = 0): void {
+  if (!soundEnabled()) return;
   const c = getCtx();
   if (!c) return;
   try {

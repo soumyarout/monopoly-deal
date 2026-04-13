@@ -17,7 +17,8 @@ import { Trophy, ArrowLeft, AlertCircle, Ban, Eye, PackageOpen, BookOpen, Crown 
 import { getColorClass, getColorDisplayName } from '@/data/cards';
 import { cn } from '@/lib/utils';
 import { useState, useEffect, useRef } from 'react';
-import { sounds } from '@/hooks/useSound';
+import { sounds, vibrate, getAudioSetting, setAudioSetting } from '@/hooks/useSound';
+import type { AudioSetting } from '@/hooks/useSound';
 
 function App() {
   const [state, actions] = useSocket();
@@ -25,6 +26,15 @@ function App() {
   const [showError, setShowError] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [showReactionPanel, setShowReactionPanel] = useState(false);
+  const [audioSetting, setAudioSettingState] = useState<AudioSetting>(() => getAudioSetting());
+
+  const cycleAudioSetting = () => {
+    const next: AudioSetting = audioSetting === 'both' ? 'haptics' : audioSetting === 'haptics' ? 'none' : 'both';
+    setAudioSetting(next);
+    setAudioSettingState(next);
+    // Confirm the change with a haptic (if haptics enabled after change)
+    if (next === 'both' || next === 'haptics') vibrate(40);
+  };
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -84,25 +94,29 @@ function App() {
     }
   }, [jsnNotification]);
 
-  // Sound: your turn starts
+  // Sound + haptic: your turn starts
   useEffect(() => {
     if (isMyTurn && !prevIsMyTurnRef.current && room?.phase === 'playing') {
       sounds.yourTurn();
+      vibrate([60, 40, 60]); // double-pulse = your turn
     }
     prevIsMyTurnRef.current = isMyTurn;
   }, [isMyTurn]);
 
-  // Sound: timer countdown
+  // Sound + haptic: timer countdown
   useEffect(() => {
     if (secondsLeft !== null && secondsLeft > 0 && secondsLeft <= 10 && isMyTurn) {
-      if (secondsLeft <= 5) sounds.timerUrgent();
+      if (secondsLeft <= 5) { sounds.timerUrgent(); vibrate(25); }
       else sounds.timerTick();
     }
   }, [secondsLeft]);
 
-  // Sound: payment due
+  // Sound + haptic: payment due
   useEffect(() => {
-    if (pendingPayment && !prevPendingPayRef.current) sounds.paymentDue();
+    if (pendingPayment && !prevPendingPayRef.current) {
+      sounds.paymentDue();
+      vibrate([80, 60, 80, 60, 120]); // urgent triple pattern
+    }
     prevPendingPayRef.current = !!pendingPayment;
   }, [pendingPayment]);
 
@@ -324,6 +338,16 @@ function App() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-gray-600 text-[10px] tabular-nums hidden sm:inline">v{__APP_VERSION__}</span>
+
+          {/* Audio / Haptics toggle */}
+          <button
+            onClick={cycleAudioSetting}
+            title={audioSetting === 'both' ? 'Audio + Haptics on' : audioSetting === 'haptics' ? 'Haptics only' : 'Audio & Haptics off'}
+            className="text-gray-400 hover:text-white text-sm px-1.5 py-1 rounded-md hover:bg-gray-700 transition-colors"
+          >
+            {audioSetting === 'both' ? '🔊' : audioSetting === 'haptics' ? '📳' : '🔇'}
+          </button>
+
           {/* Reaction button — only shown in an active game */}
           {room?.phase === 'playing' && (
             <div className="relative">

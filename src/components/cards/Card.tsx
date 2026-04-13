@@ -207,6 +207,7 @@ function PropertyCard({ card, sz }: { card: CardType; sz: 'sm' | 'md' | 'lg' }) 
 }
 
 function WildPropertyCard({ card, sz }: { card: CardType; sz: 'sm' | 'md' | 'lg' }) {
+  const cur          = useCurrency();
   const colors       = card.colors || [card.color || 'brown'];
   const uniqueColors = [...new Set(colors)];
   // Single-color wildcard (e.g. ['black','black'] railroad-only) → treat as universal-style
@@ -214,7 +215,7 @@ function WildPropertyCard({ card, sz }: { card: CardType; sz: 'sm' | 'md' | 'lg'
   const isSm         = sz === 'sm';
   const isLg         = sz === 'lg';
 
-  /* Single-color or true universal wildcard — full rainbow fill, visually powerful */
+  /* Universal wildcard — full rainbow fill, bold and distinctive */
   if (isUniversal) {
     return (
       <div style={{
@@ -222,103 +223,86 @@ function WildPropertyCard({ card, sz }: { card: CardType; sz: 'sm' | 'md' | 'lg'
         background: 'linear-gradient(160deg,#7c3aed 0%,#db2777 35%,#f97316 65%,#eab308 100%)',
         position: 'relative', overflow: 'hidden',
       }}>
-        {/* Sheen overlay */}
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: 'linear-gradient(135deg,rgba(255,255,255,0.18) 0%,transparent 55%)',
-          pointerEvents: 'none',
-        }} />
-        {/* Value badge top-left */}
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg,rgba(255,255,255,0.18) 0%,transparent 55%)', pointerEvents: 'none' }} />
         <div style={{ padding: isSm ? '2px 3px' : '3px 5px', position: 'relative', zIndex: 1 }}>
           <MBadge value={card.value} sz={sz} />
         </div>
-        {/* Body */}
-        <div style={{
-          flex: 1, display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center',
-          gap: isSm ? 2 : 3, padding: isSm ? '2px' : '4px',
-          position: 'relative', zIndex: 1,
-        }}>
-          {/* Star icon */}
-          <div style={{ fontSize: isSm ? 14 : isLg ? 32 : 22, lineHeight: 1, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.4))' }}>
-            ⭐
-          </div>
-          {/* Title */}
-          <div style={{
-            color: 'white', fontWeight: 900, textAlign: 'center',
-            fontSize: isSm ? 5.5 : isLg ? 10 : 7.5,
-            lineHeight: 1.2, letterSpacing: '0.02em',
-            textShadow: '0 1px 3px rgba(0,0,0,0.5)',
-          }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: isSm ? 2 : 3, padding: isSm ? '2px' : '4px', position: 'relative', zIndex: 1 }}>
+          <div style={{ fontSize: isSm ? 14 : isLg ? 32 : 22, lineHeight: 1, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.4))' }}>⭐</div>
+          <div style={{ color: 'white', fontWeight: 900, textAlign: 'center', fontSize: isSm ? 5.5 : isLg ? 10 : 7.5, lineHeight: 1.2, letterSpacing: '0.02em', textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
             WILD{'\n'}PROPERTY
           </div>
-          {/* Colour dots */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center', maxWidth: isSm ? 50 : 70 }}>
             {ALL_COLORS.map(c => (
-              <div key={c} style={{
-                width: isSm ? 7 : 9, height: isSm ? 7 : 9,
-                borderRadius: '50%', background: PROP_COLOR[c].banner,
-                border: '1.5px solid rgba(255,255,255,0.8)',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
-              }} />
+              <div key={c} style={{ width: isSm ? 7 : 9, height: isSm ? 7 : 9, borderRadius: '50%', background: PROP_COLOR[c].banner, border: '1.5px solid rgba(255,255,255,0.8)', boxShadow: '0 1px 2px rgba(0,0,0,0.3)' }} />
             ))}
           </div>
-          {!isSm && (
-            <div style={{
-              color: 'rgba(255,255,255,0.9)', fontWeight: 700,
-              fontSize: 5.5, textAlign: 'center', letterSpacing: '0.06em',
-              textShadow: '0 1px 2px rgba(0,0,0,0.4)',
-            }}>
-              ANY COLOUR
-            </div>
-          )}
+          {!isSm && <div style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 700, fontSize: 5.5, textAlign: 'center', letterSpacing: '0.06em', textShadow: '0 1px 2px rgba(0,0,0,0.4)' }}>ANY COLOUR</div>}
         </div>
       </div>
     );
   }
 
-  /* Dual-color wildcard — top half + bottom half rotated */
+  /* Dual-color PROPERTY wildcard — two solid halves, rent tables, clearly a property card */
   const c1   = uniqueColors[0] as PropertyColor;
   const c2   = uniqueColors[1] as PropertyColor;
   const pal1 = PROP_COLOR[c1];
   const pal2 = PROP_COLOR[c2];
-  const halfStyle = (pal: typeof pal1): React.CSSProperties => ({
+  const rent1 = PROPERTY_SET_RENT[c1];
+  const rent2 = PROPERTY_SET_RENT[c2];
+
+  const half = (pal: typeof pal1): React.CSSProperties => ({
     flex: 1, background: pal.banner,
     display: 'flex', flexDirection: 'column',
-    alignItems: 'center', justifyContent: 'center', padding: '3px 2px',
+    alignItems: 'center', justifyContent: 'center',
+    padding: isSm ? '2px 3px' : '3px 4px', gap: isSm ? 1 : 2,
   });
+
+  const RentPips = ({ rentArr, textColor }: { rentArr: number[]; textColor: string }) => (
+    <div style={{ display: 'flex', gap: isSm ? 2 : 3, alignItems: 'center' }}>
+      {rentArr.map((r, i) => (
+        <div key={i} style={{ color: textColor, fontSize: isSm ? 5 : 6, fontWeight: 800, opacity: 0.92 }}>{cur}{r}</div>
+      ))}
+    </div>
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Top half */}
-      <div style={halfStyle(pal1)}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 2 }}>
+      {/* Top half — color 1 */}
+      <div style={half(pal1)}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
           <MBadge value={card.value} sz={sz} />
-          <div style={{ color: pal1.text, fontWeight: 900, fontSize: isSm ? 5.5 : isLg ? 8.5 : 7 }}>WILD</div>
+          <div style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 800, fontSize: isSm ? 4.5 : 5.5, letterSpacing: '0.06em' }}>PROPERTY</div>
         </div>
-        <div style={{ color: pal1.text, fontWeight: 900, fontSize: isSm ? 14 : isLg ? 22 : 18, lineHeight: 1 }}>↑</div>
+        <div style={{ color: pal1.text, fontWeight: 900, fontSize: isSm ? 6 : isLg ? 10 : 7.5, textAlign: 'center', lineHeight: 1.1, textShadow: '0 1px 2px rgba(0,0,0,0.3)', letterSpacing: '0.01em' }}>
+          WILD CARD
+        </div>
         {!isSm && (
-          <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 5, fontWeight: 700, letterSpacing: '0.04em', marginTop: 1 }}>
-            {c1.toUpperCase()}
+          <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 4.5, fontWeight: 700, letterSpacing: '0.04em' }}>
+            USE AS {c1.toUpperCase()}
           </div>
         )}
+        <RentPips rentArr={rent1} textColor={pal1.text} />
       </div>
 
       {/* Divider */}
       <div style={{ height: 2, background: 'white', flexShrink: 0 }} />
 
-      {/* Bottom half — rotated 180° so it reads from the other end */}
-      <div style={{ ...halfStyle(pal2), transform: 'rotate(180deg)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 2 }}>
+      {/* Bottom half — color 2, rotated so it reads from the other end */}
+      <div style={{ ...half(pal2), transform: 'rotate(180deg)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
           <MBadge value={card.value} sz={sz} />
-          <div style={{ color: pal2.text, fontWeight: 900, fontSize: isSm ? 5.5 : isLg ? 8.5 : 7 }}>WILD</div>
+          <div style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 800, fontSize: isSm ? 4.5 : 5.5, letterSpacing: '0.06em' }}>PROPERTY</div>
         </div>
-        <div style={{ color: pal2.text, fontWeight: 900, fontSize: isSm ? 14 : isLg ? 22 : 18, lineHeight: 1 }}>↑</div>
+        <div style={{ color: pal2.text, fontWeight: 900, fontSize: isSm ? 6 : isLg ? 10 : 7.5, textAlign: 'center', lineHeight: 1.1, textShadow: '0 1px 2px rgba(0,0,0,0.3)', letterSpacing: '0.01em' }}>
+          WILD CARD
+        </div>
         {!isSm && (
-          <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 5, fontWeight: 700, letterSpacing: '0.04em', marginTop: 1 }}>
-            {c2.toUpperCase()}
+          <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 4.5, fontWeight: 700, letterSpacing: '0.04em' }}>
+            USE AS {c2.toUpperCase()}
           </div>
         )}
+        <RentPips rentArr={rent2} textColor={pal2.text} />
       </div>
     </div>
   );
@@ -451,87 +435,123 @@ function ActionCard({ card, sz }: { card: CardType; sz: 'sm' | 'md' | 'lg' }) {
   );
 }
 
+/** Pre-computed pie arc paths for the 10-color wild rent wheel */
+const PIE_PATHS = ALL_COLORS.map((_, i) => {
+  const n = ALL_COLORS.length;
+  const a1 = -Math.PI / 2 + (2 * Math.PI * i) / n;
+  const a2 = -Math.PI / 2 + (2 * Math.PI * (i + 1)) / n;
+  const x1 = (50 + 45 * Math.cos(a1)).toFixed(2);
+  const y1 = (50 + 45 * Math.sin(a1)).toFixed(2);
+  const x2 = (50 + 45 * Math.cos(a2)).toFixed(2);
+  const y2 = (50 + 45 * Math.sin(a2)).toFixed(2);
+  return `M 50 50 L ${x1} ${y1} A 45 45 0 0 1 ${x2} ${y2} Z`;
+});
+
 function RentCard({ card, sz }: { card: CardType; sz: 'sm' | 'md' | 'lg' }) {
   const isWild = !card.rentColors || card.rentColors.length === 0;
   const isSm   = sz === 'sm';
   const isLg   = sz === 'lg';
 
-  /* Wild rent — purple gradient, all colour dots */
+  // Shared ACTION CARD parchment style
+  const BG      = '#f2ece0';          // tan parchment
+  const BORDER  = '#c8b99a';
+  const HEADER_TEXT = '#6b5230';
+  const circD   = isSm ? 30 : isLg ? 60 : 42; // circle diameter in px
+
+  /* ── Wild rent — parchment bg + 10-color pie wheel ── */
   if (isWild) {
     return (
-      <div style={{
-        height: '100%',
-        background: 'linear-gradient(135deg,#6d28d9,#4c1d95)',
-        display: 'flex', flexDirection: 'column',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 3, padding: isSm ? '2px 3px' : '3px 5px' }}>
+      <div style={{ height: '100%', background: BG, display: 'flex', flexDirection: 'column' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3, padding: isSm ? '2px 3px' : '3px 5px', borderBottom: `1px solid ${BORDER}` }}>
           <MBadge value={card.value} sz={sz} />
-          <div style={{ color: 'white', fontWeight: 700, fontSize: isSm ? 5 : 6.5, letterSpacing: '0.1em', opacity: 0.85 }}>
-            RENT
+          <div style={{ fontSize: isSm ? 4.5 : 5.5, fontWeight: 800, color: HEADER_TEXT, letterSpacing: '0.08em', flex: 1, textAlign: 'center' }}>
+            ACTION CARD
           </div>
         </div>
-        <div style={{
-          flex: 1, display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: 3, padding: '2px',
-        }}>
-          <div style={{ color: 'white', fontWeight: 900, fontSize: isSm ? 7 : isLg ? 12 : 9.5, letterSpacing: '0.05em' }}>
+        {/* Body */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: isSm ? 2 : 3, padding: '3px' }}>
+          {/* 10-slice pie */}
+          <svg width={circD} height={circD} viewBox="0 0 100 100" style={{ flexShrink: 0 }}>
+            {ALL_COLORS.map((c, i) => (
+              <path key={c} d={PIE_PATHS[i]} fill={PROP_COLOR[c].banner} stroke="white" strokeWidth="1" />
+            ))}
+            {/* White center */}
+            <circle cx="50" cy="50" r="27" fill="white" />
+            <text x="50" y="55" textAnchor="middle" fontWeight="900" fontSize="17" fill="#1a1a1a" fontFamily="system-ui,sans-serif">RENT</text>
+          </svg>
+          <div style={{ color: HEADER_TEXT, fontWeight: 900, fontSize: isSm ? 6 : isLg ? 11 : 8, letterSpacing: '0.04em' }}>
             WILD RENT
           </div>
-          <div style={{
-            display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center',
-            maxWidth: isSm ? 50 : 74,
-          }}>
-            {ALL_COLORS.map(c => (
-              <div key={c} style={{
-                width: isSm ? 7 : 9, height: isSm ? 7 : 9,
-                borderRadius: '50%', background: PROP_COLOR[c].banner,
-                border: '1px solid rgba(255,255,255,0.45)',
-              }} />
-            ))}
-          </div>
           {!isSm && (
-            <div style={{ color: 'rgba(255,255,255,0.72)', fontWeight: 700, fontSize: 6, letterSpacing: '0.06em' }}>
-              ANY COLOR
+            <div style={{ color: '#8a7050', fontSize: 5, textAlign: 'center', lineHeight: 1.3, padding: '0 2px' }}>
+              Force one player to pay rent for any color you own
             </div>
           )}
         </div>
+        {!isSm && (
+          <div style={{ padding: '2px 3px', display: 'flex', justifyContent: 'flex-end', borderTop: `1px solid ${BORDER}` }}>
+            <div style={{ transform: 'rotate(180deg)' }}><MBadge value={card.value} sz={sz} /></div>
+          </div>
+        )}
       </div>
     );
   }
 
-  /* Standard dual-color rent card */
+  /* ── Dual-color rent — parchment bg + split-circle badge ── */
   const c1   = card.rentColors![0] as PropertyColor;
   const c2   = card.rentColors![1] as PropertyColor;
   const pal1 = PROP_COLOR[c1];
   const pal2 = PROP_COLOR[c2];
 
-  const halfContent = (pal: typeof pal1, colorKey: PropertyColor) => (
-    <div style={{
-      flex: 1, background: pal.banner,
-      display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', padding: '3px 2px', gap: 2,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-        <MBadge value={card.value} sz={sz} />
-        <div style={{ color: pal.text, fontWeight: 900, fontSize: isSm ? 5 : isLg ? 8 : 6.5, letterSpacing: '0.08em' }}>
-          RENT
-        </div>
-      </div>
-      {!isSm && (
-        <div style={{ color: 'rgba(255,255,255,0.8)', fontWeight: 700, fontSize: 5, letterSpacing: '0.06em' }}>
-          {colorKey.toUpperCase()}
-        </div>
-      )}
-    </div>
+  // Split circle: left semicircle = c1, right = c2, white centre with RENT
+  const SplitCircle = () => (
+    <svg width={circD} height={circD} viewBox="0 0 100 100" style={{ flexShrink: 0 }}>
+      {/* Left half */}
+      <path d="M 50 5 A 45 45 0 0 0 50 95 Z" fill={pal1.banner} />
+      {/* Right half */}
+      <path d="M 50 5 A 45 45 0 0 1 50 95 Z" fill={pal2.banner} />
+      {/* Divider line */}
+      <line x1="50" y1="5" x2="50" y2="95" stroke="white" strokeWidth="2" />
+      {/* White centre circle */}
+      <circle cx="50" cy="50" r="27" fill="white" />
+      <text x="50" y="55" textAnchor="middle" fontWeight="900" fontSize="17" fill="#1a1a1a" fontFamily="system-ui,sans-serif">RENT</text>
+    </svg>
   );
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {halfContent(pal1, c1)}
-      <div style={{ height: 2, background: 'white', flexShrink: 0 }} />
-      <div style={{ flex: 1, transform: 'rotate(180deg)', display: 'flex', flexDirection: 'column' }}>
-        {halfContent(pal2, c2)}
+    <div style={{ height: '100%', background: BG, display: 'flex', flexDirection: 'column' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 3, padding: isSm ? '2px 3px' : '3px 5px', borderBottom: `1px solid ${BORDER}` }}>
+        <MBadge value={card.value} sz={sz} />
+        <div style={{ fontSize: isSm ? 4.5 : 5.5, fontWeight: 800, color: HEADER_TEXT, letterSpacing: '0.08em', flex: 1, textAlign: 'center' }}>
+          ACTION CARD
+        </div>
       </div>
+      {/* Body */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: isSm ? 1 : 3, padding: '3px' }}>
+        <SplitCircle />
+        {/* Color labels */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: isSm ? 2 : 3 }}>
+          <div style={{ background: pal1.banner, color: pal1.text, fontSize: isSm ? 4 : 5, fontWeight: 800, padding: isSm ? '1px 2px' : '1px 4px', borderRadius: 3, letterSpacing: '0.04em' }}>
+            {c1.toUpperCase()}
+          </div>
+          <div style={{ color: '#9a8060', fontSize: isSm ? 5 : 7, fontWeight: 700 }}>/</div>
+          <div style={{ background: pal2.banner, color: pal2.text, fontSize: isSm ? 4 : 5, fontWeight: 800, padding: isSm ? '1px 2px' : '1px 4px', borderRadius: 3, letterSpacing: '0.04em' }}>
+            {c2.toUpperCase()}
+          </div>
+        </div>
+        {!isSm && (
+          <div style={{ color: '#8a7050', fontSize: 5, textAlign: 'center', lineHeight: 1.3, padding: '0 2px' }}>
+            All players pay rent for one of these colors
+          </div>
+        )}
+      </div>
+      {!isSm && (
+        <div style={{ padding: '2px 3px', display: 'flex', justifyContent: 'flex-end', borderTop: `1px solid ${BORDER}` }}>
+          <div style={{ transform: 'rotate(180deg)' }}><MBadge value={card.value} sz={sz} /></div>
+        </div>
+      )}
     </div>
   );
 }
