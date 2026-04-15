@@ -84,6 +84,7 @@ export interface Player {
   aiSkill?: AISkillLevel;
   cardsPlayedThisTurn: number;
   hadZeroCardsAtEnd: boolean; // draw 5 next turn instead of 2
+  powerCardStats?: Partial<Record<ActionType, number>>; // how many times each power card was played
 }
 
 export interface GameRoom {

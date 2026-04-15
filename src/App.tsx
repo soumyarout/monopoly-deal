@@ -246,7 +246,7 @@ function App() {
             </div>
           )}
 
-          <div className="bg-gray-50 rounded-xl p-4 mb-6">
+          <div className="bg-gray-50 rounded-xl p-4 mb-4">
             <h3 className="font-bold text-gray-700 mb-2">Final Standings</h3>
             <div className="space-y-2">
               {[...room.players]
@@ -259,6 +259,42 @@ function App() {
                 ))}
             </div>
           </div>
+
+          {/* Power Card Usage */}
+          {(() => {
+            const POWER_CARDS = [
+              { key: 'dealbreaker'   as const, label: 'Deal Breaker', bg: 'bg-red-100 text-red-700' },
+              { key: 'slydeal'       as const, label: 'Sly Deal',     bg: 'bg-orange-100 text-orange-700' },
+              { key: 'forceddeal'    as const, label: 'Forced Deal',  bg: 'bg-blue-100 text-blue-700' },
+              { key: 'sayno'         as const, label: 'Just Say No',  bg: 'bg-purple-100 text-purple-700' },
+              { key: 'birthday'      as const, label: 'Birthday',     bg: 'bg-pink-100 text-pink-700' },
+              { key: 'debtcollector' as const, label: 'Debt Coll.',   bg: 'bg-green-100 text-green-700' },
+            ];
+            const rows = room.players
+              .map(p => ({ p, badges: POWER_CARDS.filter(pc => (p.powerCardStats?.[pc.key] ?? 0) > 0) }))
+              .filter(r => r.badges.length > 0);
+            if (rows.length === 0) return null;
+            return (
+              <div className="bg-gray-50 rounded-xl p-4 mb-4">
+                <h3 className="font-bold text-gray-700 mb-3">Power Card Usage</h3>
+                <div className="space-y-2">
+                  {rows.map(({ p, badges }) => (
+                    <div key={p.id} className="flex items-start gap-2">
+                      <span className="text-xs font-medium text-gray-600 min-w-[72px] pt-1 truncate">{p.name}</span>
+                      <div className="flex flex-wrap gap-1">
+                        {badges.map(pc => (
+                          <span key={pc.key} className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded', pc.bg)}>
+                            {pc.label} ×{p.powerCardStats![pc.key]}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           <Button onClick={actions.leaveRoom} className="w-full h-14 text-lg bg-green-500 hover:bg-green-600 text-white">
             <ArrowLeft className="w-5 h-5 mr-2" /> Back to Menu
           </Button>
