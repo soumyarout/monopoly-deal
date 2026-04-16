@@ -40,6 +40,7 @@ interface SocketState {
   pendingJsnCounter: { paymentId: string; debtorName: string } | null;
   cardTakenNotification: CardTakenNotification | null;
   jsnNotification: { message: string } | null;
+  deckReshuffled: boolean;
   reactions: PlayerReaction[];
 }
 
@@ -82,6 +83,7 @@ export function useSocket(): [SocketState, SocketActions] {
     pendingJsnCounter: null,
     cardTakenNotification: null,
     jsnNotification: null,
+    deckReshuffled: false,
     reactions: [],
   });
 
@@ -237,6 +239,12 @@ export function useSocket(): [SocketState, SocketActions] {
       setState(p => ({ ...p, jsnNotification: { message } }));
     });
 
+    // Deck reshuffled from discard pile — show a brief notice
+    socket.on('deck-reshuffled', () => {
+      setState(p => ({ ...p, deckReshuffled: true }));
+      setTimeout(() => setState(p => ({ ...p, deckReshuffled: false })), 3000);
+    });
+
     socket.on('player-reaction', ({ playerId, playerName, emoji }: { playerId: string; playerName: string; emoji: string }) => {
       const reaction: PlayerReaction = { id: `${Date.now()}-${Math.random()}`, playerId, playerName, emoji, timestamp: Date.now() };
       setState(p => ({ ...p, reactions: [...p.reactions, reaction] }));
@@ -275,7 +283,7 @@ export function useSocket(): [SocketState, SocketActions] {
     localStorage.removeItem(ROOM_ID_KEY);
     socketRef.current?.disconnect();
     setTimeout(() => socketRef.current?.connect(), 100);
-    setState({ connected: false, room: null, currentPlayer: null, isSpectator: false, spectatorInfo: null, error: null, mustDiscard: 0, pendingPayment: null, pendingAction: null, pendingJsnCounter: null, cardTakenNotification: null, jsnNotification: null, reactions: [] });
+    setState({ connected: false, room: null, currentPlayer: null, isSpectator: false, spectatorInfo: null, error: null, mustDiscard: 0, pendingPayment: null, pendingAction: null, pendingJsnCounter: null, cardTakenNotification: null, jsnNotification: null, deckReshuffled: false, reactions: [] });
   }, []);
 
   const addAIPlayer = useCallback((aiSkillLevel?: AISkillLevel) => {

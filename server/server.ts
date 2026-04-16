@@ -270,7 +270,7 @@ function checkWinner(room: GameRoom): Player | null {
 }
 
 /** Draw safely, reshuffling discard pile if deck runs out (spec §9.6). */
-function safeDraw(room: GameRoom, count: number): Card[] {
+function safeDraw(room: GameRoom, count: number, roomId?: string): Card[] {
   const drawn: Card[] = [];
   for (let i = 0; i < count; i++) {
     if (room.deck.length === 0) {
@@ -278,6 +278,8 @@ function safeDraw(room: GameRoom, count: number): Card[] {
       // Shuffle twice for thorough randomisation
       room.deck = shuffleDeck(shuffleDeck([...room.discardPile]));
       room.discardPile = [];
+      // Notify all players so the reshuffle is visible
+      if (roomId) io.to(roomId).emit('deck-reshuffled', {});
     }
     if (room.deck.length > 0) drawn.push(room.deck.splice(0, 1)[0]);
   }
@@ -642,7 +644,7 @@ function processAITurn(room: GameRoom, player: Player): void {
 
   const drawCount = player.hadZeroCardsAtEnd ? 5 : 2;
   player.hadZeroCardsAtEnd = false;
-  player.hand.push(...safeDraw(room, drawCount));
+  player.hand.push(...safeDraw(room, drawCount, roomId));
 
   if (skill === 'beginner') {
     processBeginnerAITurn(room, roomId, player);
@@ -1066,7 +1068,7 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
 
   switch (card.actionType) {
     case 'passgo': {
-      const extra = safeDraw(room, 2);
+      const extra = safeDraw(room, 2, roomId);
       player.hand.push(...extra);
       break;
     }
@@ -1491,7 +1493,7 @@ io.on('connection', (socket) => {
 
     const count = player.hadZeroCardsAtEnd ? 5 : 2;
     player.hadZeroCardsAtEnd = false;
-    const drawn = safeDraw(room, count);
+    const drawn = safeDraw(room, count, roomId);
     player.hand.push(...drawn);
     room.turnPhase = 'play';
 
@@ -1925,6 +1927,48 @@ io.on('connection', (socket) => {
         if (a) resolveAction(r, roomId, a);
       }, 15000);
       actionTimers.set(actionId, timer);
+    } else if (nextResponder?.isAI && nextResponder.hand.some(c => c.actionType === 'sayno')) {
+      // AI counter-JSN: AI actor had their action blocked — auto-play their JSN to counter
+      const aiJsnIdx = nextResponder.hand.findIndex(c => c.actionType === 'sayno');
+      const [aiJsn] = nextResponder.hand.splice(aiJsnIdx, 1);
+      room.discardPile.push(aiJsn);
+      if (!nextResponder.powerCardStats) nextResponder.powerCardStats = {};
+      nextResponder.powerCardStats.sayno = (nextResponder.powerCardStats.sayno ?? 0) + 1;
+      action.jsnCount++; // now even → action back on
+
+      const actionLabel = action.type === 'dealbreaker' ? 'Deal Breaker'
+        : action.type === 'slydeal' ? 'Sly Deal' : 'Forced Deal';
+
+      // Notify the human that AI countered their JSN
+      io.to(responder.socketId).emit('jsn-notification', {
+        message: `${nextResponder.name} countered your Just Say No — ${actionLabel} is back on!`,
+      });
+
+      // Check if human (the original target/responder) has another JSN to counter-counter
+      const humanHasAnotherJsn = responder.hand.some(c => c.actionType === 'sayno');
+      if (humanHasAnotherJsn) {
+        action.responderId = responder.id;
+        io.to(responder.socketId).emit('deal-breaker-request', {
+          actionId,
+          actorName: room.players.find(p => p.id === action.actorId)?.name ?? '',
+          color: action.targetData?.color,
+          jsnCount: action.jsnCount,
+          room,
+        });
+        io.to(roomId).emit('room-updated', { room });
+
+        const timer = setTimeout(() => {
+          const r = rooms.get(roomId);
+          if (!r) return;
+          const a = r.pendingActions.find(x => x.id === actionId);
+          if (a) resolveAction(r, roomId, a);
+        }, 15000);
+        actionTimers.set(actionId, timer);
+      } else {
+        // No further counter — action executes (jsnCount even)
+        io.to(roomId).emit('room-updated', { room });
+        resolveAction(room, roomId, action);
+      }
     } else {
       // No counter possible
       if (action.jsnCount % 2 === 1) {

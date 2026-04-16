@@ -22,7 +22,7 @@ import type { AudioSetting } from '@/hooks/useSound';
 
 function App() {
   const [state, actions] = useSocket();
-  const { room, currentPlayer, error, mustDiscard, pendingPayment, pendingAction, pendingJsnCounter, isSpectator, cardTakenNotification, jsnNotification, reactions } = state;
+  const { room, currentPlayer, error, mustDiscard, pendingPayment, pendingAction, pendingJsnCounter, isSpectator, cardTakenNotification, jsnNotification, reactions, deckReshuffled } = state;
   const [showError, setShowError] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [showReactionPanel, setShowReactionPanel] = useState(false);
@@ -571,6 +571,16 @@ function App() {
             <Ban className="w-5 h-5 flex-shrink-0" />
             <p className="text-sm font-semibold leading-snug flex-1">{jsnNotification.message}</p>
             <span className="text-purple-300 text-xs">tap to dismiss</span>
+          </div>
+        </div>
+      )}
+
+      {/* Deck reshuffled toast */}
+      {deckReshuffled && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[89] max-w-sm w-full px-4 pointer-events-none">
+          <div className="bg-slate-700 text-white rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-3">
+            <span className="text-lg">🔀</span>
+            <p className="text-sm font-semibold leading-snug">Deck reshuffled from discard pile</p>
           </div>
         </div>
       )}
