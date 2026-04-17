@@ -13,7 +13,10 @@ export function setAudioSetting(s: AudioSetting) {
 function soundEnabled() { return getAudioSetting() === 'both'; }
 function hapticsEnabled() { const s = getAudioSetting(); return s === 'both' || s === 'haptics'; }
 
-/** Trigger device vibration (Android; silently no-ops on iOS/unsupported). */
+/** True on iOS — navigator.vibrate() is not supported on any iOS browser. */
+export const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+/** Trigger device vibration (Android only; silently no-ops on iOS). */
 export function vibrate(pattern: number | number[]) {
   if (!hapticsEnabled()) return;
   if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {

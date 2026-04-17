@@ -498,6 +498,9 @@ function aiBestColorForWild(player: Player, card: Card): PropertyColor {
 function processBeginnerAITurn(room: GameRoom, roomId: string, player: Player): void {
   const others = room.players.filter(p => p.id !== player.id);
 
+  // Rearrange wildcards to best color even for beginner
+  aiRearrangeWildcards(room, player);
+
   // Shuffle hand for random play order (excluding sayno/doublerent — those are situational)
   const available = [...player.hand]
     .filter(c => c.actionType !== 'sayno' && c.actionType !== 'doublerent');
@@ -632,6 +635,12 @@ function processBeginnerAITurn(room: GameRoom, roomId: string, player: Player): 
     played++;
   }
 
+  // Discard down to 7 at end of turn (rule §4.5)
+  while (player.hand.length > 7) {
+    const idx = Math.floor(Math.random() * player.hand.length);
+    const [excess] = player.hand.splice(idx, 1);
+    room.discardPile.push(excess);
+  }
   player.cardsPlayedThisTurn = 0;
   advanceTurn(room, roomId);
 }
@@ -902,6 +911,12 @@ function processAITurn(room: GameRoom, player: Player): void {
     played++;
   }
 
+  // Discard down to 7 at end of turn (rule §4.5)
+  while (player.hand.length > 7) {
+    const idx = Math.floor(Math.random() * player.hand.length);
+    const [excess] = player.hand.splice(idx, 1);
+    room.discardPile.push(excess);
+  }
   player.cardsPlayedThisTurn = 0;
   advanceTurn(room, roomId);
 }

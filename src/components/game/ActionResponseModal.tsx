@@ -37,11 +37,19 @@ export function ActionResponseModal({ action, myPlayer, actorName, onAccept, onJ
     : action.type === 'slydeal' ? 'Sly Deal'
     : 'Forced Deal';
 
+  // For Sly Deal: look up the specific card being stolen
+  const stolenCard = action.type === 'slydeal'
+    ? myPlayer.properties.find(s => s.color === action.targetData?.color)?.cards.find(c => c.id === action.targetData?.cardId)
+    : null;
+  // For Forced Deal: colors being exchanged
+  const theirColorLabel = getColorDisplayName(action.targetData?.theirColor as PropertyColor);
+  const myColorLabel = getColorDisplayName(action.targetData?.myColor as PropertyColor);
+
   const initialAlertText = action.type === 'dealbreaker'
     ? `${actorName} is stealing your complete ${colorLabel} set!`
     : action.type === 'slydeal'
-    ? `${actorName} is using Sly Deal to steal one of your properties!`
-    : `${actorName} wants to swap one of your properties using Forced Deal!`;
+    ? `${actorName} is stealing your ${stolenCard?.name ?? colorLabel} (${colorLabel}) with Sly Deal!`
+    : `${actorName} wants to take your ${theirColorLabel} property and give you their ${myColorLabel} property!`;
 
   return (
     <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-4">
@@ -96,7 +104,9 @@ export function ActionResponseModal({ action, myPlayer, actorName, onAccept, onJ
               ? `Accept (${actionLabel} goes through)`
               : action.type === 'dealbreaker'
               ? `Accept (give up ${colorLabel} set)`
-              : 'Accept'}
+              : action.type === 'slydeal'
+              ? `Accept (give up ${stolenCard?.name ?? colorLabel})`
+              : `Accept (swap ${theirColorLabel} for ${myColorLabel})`}
           </Button>
         </div>
       </div>

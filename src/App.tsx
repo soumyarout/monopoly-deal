@@ -17,7 +17,7 @@ import { Trophy, ArrowLeft, AlertCircle, Ban, Eye, PackageOpen, BookOpen, Crown 
 import { getColorClass, getColorDisplayName } from '@/data/cards';
 import { cn } from '@/lib/utils';
 import { useState, useEffect, useRef } from 'react';
-import { sounds, vibrate, getAudioSetting, setAudioSetting } from '@/hooks/useSound';
+import { sounds, vibrate, getAudioSetting, setAudioSetting, isIOS } from '@/hooks/useSound';
 import type { AudioSetting } from '@/hooks/useSound';
 
 function App() {
@@ -29,10 +29,12 @@ function App() {
   const [audioSetting, setAudioSettingState] = useState<AudioSetting>(() => getAudioSetting());
 
   const cycleAudioSetting = () => {
-    const next: AudioSetting = audioSetting === 'both' ? 'haptics' : audioSetting === 'haptics' ? 'none' : 'both';
+    // iOS doesn't support navigator.vibrate() — skip the haptics-only option
+    const next: AudioSetting = isIOS
+      ? (audioSetting === 'both' ? 'none' : 'both')
+      : (audioSetting === 'both' ? 'haptics' : audioSetting === 'haptics' ? 'none' : 'both');
     setAudioSetting(next);
     setAudioSettingState(next);
-    // Confirm the change with a haptic (if haptics enabled after change)
     if (next === 'both' || next === 'haptics') vibrate(40);
   };
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
@@ -378,7 +380,9 @@ function App() {
           {/* Audio / Haptics toggle */}
           <button
             onClick={cycleAudioSetting}
-            title={audioSetting === 'both' ? 'Audio + Haptics on' : audioSetting === 'haptics' ? 'Haptics only' : 'Audio & Haptics off'}
+            title={isIOS
+              ? (audioSetting === 'both' ? 'Sound on (haptics not supported on iOS)' : 'Sound off')
+              : (audioSetting === 'both' ? 'Audio + Haptics on' : audioSetting === 'haptics' ? 'Haptics only' : 'Audio & Haptics off')}
             className="text-gray-400 hover:text-white text-sm px-1.5 py-1 rounded-md hover:bg-gray-700 transition-colors"
           >
             {audioSetting === 'both' ? '🔊' : audioSetting === 'haptics' ? '📳' : '🔇'}

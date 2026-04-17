@@ -16,7 +16,7 @@ interface CardProps {
 const PROP_COLOR: Record<PropertyColor, { banner: string; text: string }> = {
   brown:     { banner: '#6b2d0e', text: '#fff' },   // deep chocolate brown
   lightblue: { banner: '#0ea5e9', text: '#fff' },
-  pink:      { banner: '#db2777', text: '#fff' },
+  pink:      { banner: '#f72585', text: '#fff' },  // vivid hot pink — distinct from red
   orange:    { banner: '#f97316', text: '#fff' },
   red:       { banner: '#dc2626', text: '#fff' },
   yellow:    { banner: '#eab308', text: '#111' },   // bright yellow, dark text
