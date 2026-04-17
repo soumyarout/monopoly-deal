@@ -1096,6 +1096,46 @@ function aiAutoPlayJsn(room: GameRoom, roomId: string, actor: Player, aiTarget: 
   return true;
 }
 
+/**
+ * After an AI target auto-played JSN to block a human actor's steal/swap,
+ * offer the human actor a chance to counter with their own JSN.
+ * Creates a pendingAction (jsnCount=1, responderId=actor) and emits
+ * 'deal-breaker-counter' to the human actor.
+ * Returns true if counter was offered (caller should `return`),
+ * false if actor has no JSN (caller should `break`).
+ */
+function offerHumanActorCounterJsn(
+  room: GameRoom, roomId: string,
+  actor: Player, aiTarget: Player,
+  type: 'dealbreaker' | 'slydeal' | 'forceddeal',
+  cardId: string, targetData: unknown, displayColor: string | undefined,
+): boolean {
+  if (actor.isAI || !actor.hand.some(c => c.actionType === 'sayno')) return false;
+  const pendingAction: PendingAction = {
+    id: uuidv4(), type,
+    actorId: actor.id, targetId: aiTarget.id,
+    targetData, cardId,
+    responderId: actor.id,  // human actor responds next (counter-JSN)
+    jsnCount: 1,            // AI already spent 1 JSN
+  };
+  room.pendingActions.push(pendingAction);
+  io.to(actor.socketId).emit('deal-breaker-counter', {
+    actionId: pendingAction.id,
+    actorName: actor.name,
+    color: displayColor,
+    jsnCount: 1,
+    room,
+  });
+  const timer = setTimeout(() => {
+    const r = rooms.get(roomId);
+    if (!r) return;
+    const a = r.pendingActions.find(x => x.id === pendingAction.id);
+    if (a) resolveAction(r, roomId, a);  // timeout → jsnCount=1 (odd) → action cancelled
+  }, 15000);
+  actionTimers.set(pendingAction.id, timer);
+  return true;
+}
+
 function handleActionCard(room: GameRoom, roomId: string, player: Player, card: Card, targetData?: any): void {
   // House and Hotel cards stay on the table with their set — do NOT discard them here
   const isImprovement = card.actionType === 'house' || card.actionType === 'hotel';
@@ -1172,7 +1212,10 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
         }
       }
       // AI target: always block Deal Breaker with JSN (never give away a complete set for free)
-      if (targetPlayer?.isAI && aiAutoPlayJsn(room, roomId, player, targetPlayer, 'Deal Breaker')) break;
+      if (targetPlayer?.isAI && aiAutoPlayJsn(room, roomId, player, targetPlayer, 'Deal Breaker')) {
+        if (offerHumanActorCounterJsn(room, roomId, player, targetPlayer, 'dealbreaker', card.id, targetData, targetData?.color)) return;
+        break;
+      }
       // No JSN — execute immediately
       if (targetPlayer) {
         const targetSet = targetPlayer.properties.find(p => p.color === targetData?.color);
@@ -1226,7 +1269,10 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
       // AI target: use JSN if protecting a set with meaningful investment (≥2 cards)
       if (targetPlayer?.isAI) {
         const aiSlySet = targetPlayer.properties.find(p => p.color === targetData?.color);
-        if (aiSlySet && aiSlySet.cards.length >= 2 && aiAutoPlayJsn(room, roomId, player, targetPlayer, 'Sly Deal')) break;
+        if (aiSlySet && aiSlySet.cards.length >= 2 && aiAutoPlayJsn(room, roomId, player, targetPlayer, 'Sly Deal')) {
+          if (offerHumanActorCounterJsn(room, roomId, player, targetPlayer, 'slydeal', card.id, targetData, targetData?.color)) return;
+          break;
+        }
       }
       // Execute immediately (AI target with small set, or no JSN in hand)
       if (targetPlayer) {
@@ -1279,7 +1325,10 @@ function handleActionCard(room: GameRoom, roomId: string, player: Player, card: 
       // AI target: use JSN if protecting a set with meaningful investment (≥2 cards)
       if (targetPlayer?.isAI) {
         const aiFdSet = targetPlayer.properties.find(p => p.color === targetData?.theirColor);
-        if (aiFdSet && aiFdSet.cards.length >= 2 && aiAutoPlayJsn(room, roomId, player, targetPlayer, 'Forced Deal')) break;
+        if (aiFdSet && aiFdSet.cards.length >= 2 && aiAutoPlayJsn(room, roomId, player, targetPlayer, 'Forced Deal')) {
+          if (offerHumanActorCounterJsn(room, roomId, player, targetPlayer, 'forceddeal', card.id, targetData, targetData?.theirColor)) return;
+          break;
+        }
       }
       // Execute immediately
       if (targetPlayer) {
