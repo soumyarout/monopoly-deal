@@ -419,6 +419,33 @@ function processPayment(
 // ─── AI Helpers ──────────────────────────────────────────────────────────────
 
 /**
+ * Score a hand card for end-of-turn discard selection.
+ * Lower score = discard sooner. Power cards are never discarded unless
+ * there is literally nothing else left.
+ */
+function aiDiscardPriority(card: Card): number {
+  // Low cash — cheapest to lose
+  if (card.type === 'cash') return card.value;                   // 1–10
+  // Pass Go / Double Rent — low value, easily replaceable
+  if (card.actionType === 'passgo')     return 1.5;
+  if (card.actionType === 'doublerent') return 2;
+  // Rent cards — situational but not as critical as attack cards
+  if (card.type === 'rent')             return 9;
+  // Properties / wildcards — don't throw away unplayed properties
+  if (card.type === 'property' || card.type === 'wild') return 15;
+  // Power action cards — keep these at all costs
+  if (card.actionType === 'house')         return 12;
+  if (card.actionType === 'hotel')         return 12;
+  if (card.actionType === 'birthday')      return 16;
+  if (card.actionType === 'debtcollector') return 16;
+  if (card.actionType === 'forceddeal')    return 17;
+  if (card.actionType === 'slydeal')       return 18;
+  if (card.actionType === 'dealbreaker')   return 19;
+  if (card.actionType === 'sayno')         return 20;
+  return card.value;
+}
+
+/**
  * Rearrange multi-color wildcards to the set where they contribute most
  * to completion. Free action (spec §9.3).
  */
@@ -635,11 +662,10 @@ function processBeginnerAITurn(room: GameRoom, roomId: string, player: Player): 
     played++;
   }
 
-  // Discard down to 7 at end of turn (rule §4.5)
-  while (player.hand.length > 7) {
-    const idx = Math.floor(Math.random() * player.hand.length);
-    const [excess] = player.hand.splice(idx, 1);
-    room.discardPile.push(excess);
+  // Discard down to 7 at end of turn (rule §4.5) — lowest-priority cards first
+  if (player.hand.length > 7) {
+    player.hand.sort((a, b) => aiDiscardPriority(a) - aiDiscardPriority(b));
+    while (player.hand.length > 7) room.discardPile.push(player.hand.shift()!);
   }
   player.cardsPlayedThisTurn = 0;
   advanceTurn(room, roomId);
@@ -911,11 +937,10 @@ function processAITurn(room: GameRoom, player: Player): void {
     played++;
   }
 
-  // Discard down to 7 at end of turn (rule §4.5)
-  while (player.hand.length > 7) {
-    const idx = Math.floor(Math.random() * player.hand.length);
-    const [excess] = player.hand.splice(idx, 1);
-    room.discardPile.push(excess);
+  // Discard down to 7 at end of turn (rule §4.5) — lowest-priority cards first
+  if (player.hand.length > 7) {
+    player.hand.sort((a, b) => aiDiscardPriority(a) - aiDiscardPriority(b));
+    while (player.hand.length > 7) room.discardPile.push(player.hand.shift()!);
   }
   player.cardsPlayedThisTurn = 0;
   advanceTurn(room, roomId);
